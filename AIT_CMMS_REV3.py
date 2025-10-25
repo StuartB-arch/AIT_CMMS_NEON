@@ -865,8 +865,8 @@ def generate_monthly_summary_report(conn, month=None, year=None):
         print("-" * 80)
     
         for cm_number, bfm, created, completed, tech in old_cms:
-            created_short = created[:10] if created else "Unknown"
-            completed_short = completed[:10] if completed else "Unknown"
+            created_short = str(created)[:10] if created else "Unknown"
+            completed_short = str(completed)[:10] if completed else "Unknown"
             bfm_short = (bfm[:15] if bfm else "N/A")
             tech_short = (tech[:20] if tech else "Unassigned")
             print(f"{cm_number:<12} {created_short:<12} {completed_short:<12} {bfm_short:<15} {tech_short:<20}")
@@ -1303,8 +1303,8 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
             cm_detail_data = [['CM Number', 'Equipment', 'Created', 'Closed', 'Technician']]
         
             for cm_number, bfm, created, completed, tech in old_cms:
-                created_short = created[:10] if created else "N/A"
-                completed_short = completed[:10] if completed else "N/A"
+                created_short = str(created)[:10] if created else "N/A"
+                completed_short = str(completed)[:10] if completed else "N/A"
                 bfm_short = (bfm[:12] + '...' if len(str(bfm)) > 12 else bfm) if bfm else "N/A"
                 tech_short = (tech[:15] + '...' if len(str(tech)) > 15 else tech) if tech else "Unassigned"
                 cm_detail_data.append([cm_number, bfm_short, created_short, completed_short, tech_short])
@@ -3319,7 +3319,7 @@ class AITCMMSSystem:
                     step_count = 0
             
                 self.templates_tree.insert('', 'end', values=(
-                    bfm_no, name, pm_type, step_count, f"{est_hours:.1f}h", updated[:10]
+                    bfm_no, name, pm_type, step_count, f"{est_hours:.1f}h", str(updated)[:10] if updated else "N/A"
                 ))
             
         except Exception as e:
@@ -3362,7 +3362,7 @@ class AITCMMSSystem:
                     step_count = 0
             
                 self.templates_tree.insert('', 'end', values=(
-                    bfm_no, name, pm_type, step_count, f"{est_hours:.1f}h", updated[:10]
+                    bfm_no, name, pm_type, step_count, f"{est_hours:.1f}h", str(updated)[:10] if updated else "N/A"
                 ))
     
         except Exception as e:
@@ -5243,7 +5243,7 @@ class AITCMMSSystem:
                     step_count = 0
             
                 self.templates_tree.insert('', 'end', values=(
-                    bfm_no, name, pm_type, step_count, f"{est_hours:.1f}h", updated[:10]
+                    bfm_no, name, pm_type, step_count, f"{est_hours:.1f}h", str(updated)[:10] if updated else "N/A"
                 ))
             
         except Exception as e:
@@ -5286,7 +5286,7 @@ class AITCMMSSystem:
                     step_count = 0
             
                 self.templates_tree.insert('', 'end', values=(
-                    bfm_no, name, pm_type, step_count, f"{est_hours:.1f}h", updated[:10]
+                    bfm_no, name, pm_type, step_count, f"{est_hours:.1f}h", str(updated)[:10] if updated else "N/A"
                 ))
     
         except Exception as e:
