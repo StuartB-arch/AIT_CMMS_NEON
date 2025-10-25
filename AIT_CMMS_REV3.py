@@ -6,6 +6,7 @@ Fully functional CMMS with automatic PM scheduling, technician assignment, and c
 from datetime import datetime, timedelta
 from mro_stock_module import MROStockManager
 from cm_parts_integration import CMPartsIntegration
+from database_utils import db_pool, UserManager, AuditLogger, OptimisticConcurrencyControl, TransactionManager
 import shutil
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
@@ -2910,7 +2911,7 @@ class AITCMMSSystem:
 
 
     def on_closing(self):
-        """Close application and database connection"""
+        """Close application, end user session, and cleanup connections"""
         try:
             result = messagebox.askyesno(
                 "Confirm Exit",
@@ -2920,12 +2921,21 @@ class AITCMMSSystem:
 
             if result:
                 try:
+                    # End user session
+                    if hasattr(self, 'session_id') and self.session_id:
+                        with db_pool.get_cursor() as cursor:
+                            UserManager.end_session(cursor, self.session_id)
+                            print(f"CHECK: User session ended for {self.user_name}")
+
+                    # Close main connection if it exists
                     if hasattr(self, 'conn') and self.conn:
                         self.conn.commit()  # Save any pending changes
-                        self.conn.close()
-                        print("CHECK: Database connection closed safely")
+                        db_pool.return_connection(self.conn)
+                        print("CHECK: Database connection returned to pool")
+
                 except Exception as e:
-                    print(f"WARNING: Error closing connection: {e}")
+                    print(f"WARNING: Error during cleanup: {e}")
+
                 self.root.destroy()
 
         except Exception as e:
@@ -4350,13 +4360,15 @@ class AITCMMSSystem:
         }
         self.conn = None
         self.session_start_time = datetime.now()
+        self.session_id = None  # Track user session for multi-user support
+        self.user_id = None  # Database user ID
         self.root.title("AIT Complete CMMS - Computerized Maintenance Management System")
         self.root.geometry("1800x1000")
         try:
             self.root.state('zoomed')  # Maximize window on Windows
         except:
             pass  # Skip if not on Windows
-    
+
         # ===== ROLE-BASED ACCESS CONTROL =====
         self.current_user_role = None  # Will be set by login
         self.user_name = None
@@ -4682,16 +4694,15 @@ class AITCMMSSystem:
     # sync_database_before_init removed - using PostgreSQL only
 
     def show_login_dialog(self):
-        """Show login dialog to determine user role with password protection for manager"""
-        # Ensure we start fresh
+        """Show database-backed login dialog with multi-user authentication"""
         login_successful = False
-    
+
         def create_login_dialog():
             nonlocal login_successful
-            
+
             login_dialog = tk.Toplevel(self.root)
             login_dialog.title("AIT CMMS - User Login")
-            login_dialog.geometry("450x350")
+            login_dialog.geometry("400x250")
             login_dialog.transient(self.root)
             login_dialog.grab_set()
 
@@ -4708,119 +4719,86 @@ class AITCMMSSystem:
             header_frame = ttk.Frame(login_dialog)
             header_frame.pack(fill='x', padx=20, pady=20)
 
-            ttk.Label(header_frame, text="AIT CMMS LOGIN", 
+            ttk.Label(header_frame, text="AIT CMMS LOGIN",
                     font=('Arial', 16, 'bold')).pack()
-            ttk.Label(header_frame, text="Select your role to continue", 
+            ttk.Label(header_frame, text="Enter your credentials",
                     font=('Arial', 10)).pack(pady=5)
 
-            # User selection
-            user_frame = ttk.LabelFrame(login_dialog, text="Select User", padding=15)
-            user_frame.pack(fill='x', padx=20, pady=10)
+            # Login form
+            form_frame = ttk.Frame(login_dialog)
+            form_frame.pack(fill='both', expand=True, padx=20, pady=10)
 
-            selected_user = tk.StringVar()
+            # Username
+            ttk.Label(form_frame, text="Username:", font=('Arial', 10)).grid(row=0, column=0, sticky='w', pady=5)
+            username_var = tk.StringVar()
+            username_entry = ttk.Entry(form_frame, textvariable=username_var, width=25)
+            username_entry.grid(row=0, column=1, sticky='ew', pady=5)
+            username_entry.focus_set()
 
-            # Manager option with password requirement
-            manager_frame = ttk.Frame(user_frame)
-            manager_frame.pack(fill='x', pady=5)
-
-            ttk.Radiobutton(manager_frame, text="Manager (Full Access)", 
-                        variable=selected_user, value="Manager").pack(side='left')
-            ttk.Label(manager_frame, text="- Access to all CMMS functions (Password Required)", 
-                    font=('Arial', 9), foreground='blue').pack(side='left', padx=10)
-
-            # Password field for manager (initially hidden)
-            password_frame = ttk.Frame(user_frame)
-            password_frame.pack(fill='x', pady=10)
-
-            ttk.Label(password_frame, text="Manager Password:", font=('Arial', 10, 'bold')).pack(anchor='w')
+            # Password
+            ttk.Label(form_frame, text="Password:", font=('Arial', 10)).grid(row=1, column=0, sticky='w', pady=5)
             password_var = tk.StringVar()
-            password_entry = ttk.Entry(password_frame, textvariable=password_var, show="*", width=20)
-            password_entry.pack(anchor='w', pady=2)
+            password_entry = ttk.Entry(form_frame, textvariable=password_var, show="*", width=25)
+            password_entry.grid(row=1, column=1, sticky='ew', pady=5)
 
-            # Initially hide password field
-            password_frame.pack_forget()
+            form_frame.columnconfigure(1, weight=1)
 
-            # Separator
-            ttk.Separator(user_frame, orient='horizontal').pack(fill='x', pady=10)
+            # Status label
+            status_var = tk.StringVar()
+            status_label = ttk.Label(form_frame, textvariable=status_var, foreground='red', font=('Arial', 9))
+            status_label.grid(row=2, column=0, columnspan=2, pady=5)
 
-            # Technician options
-            ttk.Label(user_frame, text="Technicians (CM Access Only):", 
-                    font=('Arial', 10, 'bold')).pack(anchor='w', pady=(0,5))
-
-            # Create technician radio buttons in two columns
-            tech_frame = ttk.Frame(user_frame)
-            tech_frame.pack(fill='x')
-
-            left_column = ttk.Frame(tech_frame)
-            left_column.pack(side='left', fill='both', expand=True)
-
-            right_column = ttk.Frame(tech_frame)
-            right_column.pack(side='right', fill='both', expand=True)
-
-            for i, tech in enumerate(self.technicians):
-                column = left_column if i < len(self.technicians)//2 else right_column
-                ttk.Radiobutton(column, text=tech, 
-                            variable=selected_user, value=tech).pack(anchor='w', pady=1)
-
-            def on_user_selection_change(*args):
-                """Show/hide password field based on selection"""
-                if selected_user.get() == "Manager":
-                    password_frame.pack(fill='x', pady=10, after=manager_frame)
-                    password_entry.focus_set()
-                else:
-                    password_frame.pack_forget()
-
-            # Bind to user selection changes
-            selected_user.trace('w', on_user_selection_change)
-
-            # Track if login is in progress to prevent double-execution
             login_in_progress = False
 
             def do_login():
                 nonlocal login_successful, login_in_progress
-            
+
                 if login_in_progress:
                     return
-            
-                login_in_progress = True
-            
-                try:
-                    user = selected_user.get()
 
-                    if not user:
-                        messagebox.showerror("Error", "Please select a user")
+                login_in_progress = True
+                status_var.set("")
+
+                try:
+                    username = username_var.get().strip()
+                    password = password_var.get()
+
+                    if not username or not password:
+                        status_var.set("Please enter both username and password")
                         return
 
-                    # Handle manager login with password
-                    if user == "Manager":
-                        entered_password = password_var.get()
-                        correct_password = "AIT2584"
+                    # Authenticate using database
+                    try:
+                        with db_pool.get_cursor() as cursor:
+                            user = UserManager.authenticate(cursor, username, password)
 
-                        if not entered_password:
-                            messagebox.showerror("Error", "Please enter the manager password")
-                            password_entry.focus_set()
-                            return
+                            if user:
+                                # Update last login time
+                                cursor.execute(
+                                    "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = %s",
+                                    (user['id'],)
+                                )
 
-                        if entered_password != correct_password:
-                            messagebox.showerror("Access Denied", 
-                                            "Incorrect manager password.\n\n"
-                                            "Access to manager functions is restricted.")
-                            password_var.set("")
-                            password_entry.focus_set()
-                            return
+                                # Create session
+                                self.session_id = UserManager.create_session(cursor, user['id'], user['username'])
 
-                        # Password correct
-                        self.current_user_role = "Manager"
-                        self.user_name = "Manager"
+                                # Set user info
+                                self.user_id = user['id']
+                                self.user_name = user['full_name']
+                                self.current_user_role = user['role']
 
-                    else:
-                        # Technician login (no password required)
-                        self.current_user_role = "Technician"
-                        self.user_name = user
+                                login_successful = True
+                                dialog.quit()
+                            else:
+                                status_var.set("Invalid username or password")
+                                password_var.set("")
+                                password_entry.focus_set()
 
-                    login_successful = True
-                    dialog.quit()
-                
+                    except Exception as e:
+                        print(f"Login error: {e}")
+                        status_var.set("Login failed. Please try again.")
+                        password_var.set("")
+
                 finally:
                     login_in_progress = False
 
@@ -4837,12 +4815,12 @@ class AITCMMSSystem:
             login_button.pack(side='left', padx=5)
             ttk.Button(button_frame, text="Exit", command=cancel_login).pack(side='right', padx=5)
 
-            # Simplified event binding
+            # Enter key bindings
             def on_enter_key(event):
                 if not login_in_progress:
                     do_login()
 
-            # Only bind to password entry
+            username_entry.bind('<Return>', on_enter_key)
             password_entry.bind('<Return>', on_enter_key)
 
             return login_dialog
@@ -4851,7 +4829,7 @@ class AITCMMSSystem:
         dialog = create_login_dialog()
         dialog.mainloop()
         dialog.destroy()
-    
+
         return login_successful
 
     
@@ -5830,22 +5808,19 @@ class AITCMMSSystem:
     
     
     def init_database(self):
-        """Initialize comprehensive CMMS database with Neon PostgreSQL"""
+        """Initialize comprehensive CMMS database with Neon PostgreSQL and connection pooling"""
         try:
-            # Connect to Neon PostgreSQL with SSL
-            self.conn = psycopg2.connect(
-                host=self.DB_CONFIG['host'],
-                port=self.DB_CONFIG['port'],
-                database=self.DB_CONFIG['database'],
-                user=self.DB_CONFIG['user'],
-                password=self.DB_CONFIG['password'],
-                sslmode=self.DB_CONFIG.get('sslmode', 'require')
-            )
+            # Initialize connection pool for multi-user support (3-5 concurrent users)
+            db_pool.initialize(self.DB_CONFIG, min_conn=2, max_conn=10)
+
+            # Get a connection from the pool for initial setup
+            self.conn = db_pool.get_connection()
             self.conn.autocommit = False  # Manual commit control
             cursor = self.conn.cursor()
-        
+
             print("=" * 60)
             print("CHECK: Connected to Neon PostgreSQL successfully!")
+            print("CHECK: Connection pool initialized for multi-user support")
             print("=" * 60)
         
             # Equipment/Assets table
@@ -6045,16 +6020,59 @@ class AITCMMSSystem:
                     FOREIGN KEY (bfm_equipment_no) REFERENCES equipment (bfm_equipment_no)
                 )
             ''')
-        
-        
-        
-        
-        
-        
-        
-        
+
+            # ===== MULTI-USER SUPPORT TABLES =====
+            # Users table for authentication
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS users (
+                    id SERIAL PRIMARY KEY,
+                    username TEXT UNIQUE NOT NULL,
+                    password_hash TEXT NOT NULL,
+                    full_name TEXT NOT NULL,
+                    role TEXT NOT NULL CHECK (role IN ('Manager', 'Technician')),
+                    email TEXT,
+                    is_active BOOLEAN DEFAULT TRUE,
+                    created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_login TIMESTAMP,
+                    created_by TEXT,
+                    notes TEXT
+                )
+            ''')
+
+            # User sessions table for tracking active sessions
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS user_sessions (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    username TEXT NOT NULL,
+                    login_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    logout_time TIMESTAMP,
+                    last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    is_active BOOLEAN DEFAULT TRUE,
+                    session_data TEXT,
+                    FOREIGN KEY (user_id) REFERENCES users (id)
+                )
+            ''')
+
+            # Audit log table for tracking all changes
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS audit_log (
+                    id SERIAL PRIMARY KEY,
+                    user_name TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    table_name TEXT NOT NULL,
+                    record_id TEXT,
+                    old_values TEXT,
+                    new_values TEXT,
+                    notes TEXT,
+                    action_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+
             self.conn.commit()
             print("CHECK: Database tables created successfully!")
+            print("CHECK: Multi-user support tables initialized")
             print("=" * 60 + "\n")
         
         except Exception as e:
