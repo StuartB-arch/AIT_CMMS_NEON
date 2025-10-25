@@ -6721,6 +6721,7 @@ class AITCMMSSystem:
         
         self.recent_completions_tree.pack(fill='both', expand=True)
         self.recent_completions_tree.bind('<Double-1>', self.on_completion_double_click)
+        self.recent_completions_tree.bind('<<TreeviewSelect>>', self.on_completion_select)
         
         # Load recent completions
         self.load_recent_completions()
@@ -7210,6 +7211,31 @@ class AITCMMSSystem:
         
             # Get full completion details from database
             self.generate_pm_completion_pdf(completion_date, bfm_no, pm_type, technician)
+
+    def on_completion_select(self, event):
+        """Handle single-click on recent PM completions to populate form fields"""
+        selection = self.recent_completions_tree.selection()
+        if not selection:
+            return
+
+        # Get the selected item's values
+        item = self.recent_completions_tree.item(selection[0])
+        values = item['values']
+
+        if len(values) >= 5:
+            completion_date = values[0]
+            bfm_no = values[1]
+            pm_type = values[2]
+            technician = values[3]
+
+            # Populate the form fields with the selected completion data
+            self.completion_bfm_var.set(bfm_no)
+            self.pm_type_var.set(pm_type)
+            self.completion_tech_var.set(technician)
+
+            # Update status bar to confirm selection
+            if hasattr(self, 'update_status'):
+                self.update_status(f"Selected equipment {bfm_no} from recent completions")
 
     def generate_pm_completion_pdf(self, completion_date, bfm_no, pm_type, technician):
         """Generate and export PM completion PDF document"""
