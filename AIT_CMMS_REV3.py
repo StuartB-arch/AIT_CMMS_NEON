@@ -2040,22 +2040,23 @@ class AITCMMSSystem:
 
 
     def generate_cm_number(self):
-        """Generate next CM number"""
+        """Generate next CM number in format CM-YYYYMMDD-XXXX"""
         cursor = self.conn.cursor()
-        cursor.execute('SELECT MAX(cm_number) FROM corrective_maintenance')
+        today = datetime.now().strftime('%Y%m%d')
+        cursor.execute(
+            "SELECT MAX(CAST(SPLIT_PART(cm_number, '-', 3) AS INTEGER)) "
+            "FROM corrective_maintenance "
+            "WHERE cm_number LIKE %s",
+            (f'CM-{today}-%',)
+        )
         result = cursor.fetchone()
-    
+
         if result[0]:
-            # Extract number and increment
-            try:
-                last_num = int(result[0].replace('CM-', ''))
-                next_num = last_num + 1
-            except:
-                next_num = 1
+            next_num = result[0] + 1
         else:
             next_num = 1
-    
-        return f"CM-{next_num:04d}"
+
+        return f"CM-{today}-{next_num:04d}"
 
     
     
@@ -9772,11 +9773,18 @@ class AITCMMSSystem:
         dialog.transient(self.root)
         dialog.grab_set()
 
-        # Generate next CM number
+        # Generate next CM number in format CM-YYYYMMDD-XXXX
         cursor = self.conn.cursor()
-        cursor.execute("SELECT MAX(CAST(SUBSTRING(cm_number FROM 3) AS INTEGER)) FROM corrective_maintenance WHERE cm_number LIKE 'CM%'")
+        today = datetime.now().strftime('%Y%m%d')
+        cursor.execute(
+            "SELECT MAX(CAST(SPLIT_PART(cm_number, '-', 3) AS INTEGER)) "
+            "FROM corrective_maintenance "
+            "WHERE cm_number LIKE %s",
+            (f'CM-{today}-%',)
+        )
         result = cursor.fetchone()[0]
-        next_cm_num = f"CM{(result + 1) if result else 1:04d}"
+        next_seq = (result + 1) if result else 1
+        next_cm_num = f"CM-{today}-{next_seq:04d}"
 
         row = 0
 
