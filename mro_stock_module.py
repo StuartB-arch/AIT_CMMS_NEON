@@ -1283,11 +1283,12 @@ class MROStockManager:
         cursor = self.conn.cursor()
         
         cursor.execute('''
-            INSERT OR IGNORE INTO mro_inventory (
+            INSERT INTO mro_inventory (
                 name, part_number, model_number, equipment, engineering_system,
                 unit_of_measure, quantity_in_stock, unit_price, minimum_stock,
                 supplier, location, rack, row, bin
             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (part_number) DO NOTHING
         ''', (
             data.get('Name', ''),
             data.get('Part Number', ''),
