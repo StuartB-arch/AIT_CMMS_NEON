@@ -467,11 +467,13 @@ class MROStockManager:
                 messagebox.showinfo("Success", "Part added successfully!")
                 dialog.destroy()
                 self.refresh_mro_list()
-            
-            except sqlite3.IntegrityError:
-                messagebox.showerror("Error", "Part number already exists!")
+
             except Exception as e:
-                messagebox.showerror("Error", f"Failed to add part: {str(e)}")
+                error_msg = str(e).lower()
+                if 'unique constraint' in error_msg or 'duplicate' in error_msg or 'already exists' in error_msg:
+                    messagebox.showerror("Error", "Part number already exists!")
+                else:
+                    messagebox.showerror("Error", f"Failed to add part: {str(e)}")
     
         ttk.Button(btn_frame, text="💾 Save Part", command=save_part, width=20).pack(side='left', padx=10)
         ttk.Button(btn_frame, text="❌ Cancel", command=dialog.destroy, width=20).pack(side='left', padx=10)
