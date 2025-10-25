@@ -1,0 +1,8 @@
+psql 'postgresql://neondb_owner:npg_2Nm6hyPVWiIH@ep-tiny-paper-ad8glt26-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require'
+
+
+Host: ep-tiny-paper-ad8glt26-pooler.c-2.us-east-1.aws.neon.tech
+Database: neondb
+User (Role): neondb_owner
+Password: [npg_2Nm6hyPVWiIH]
+Port: 5432
