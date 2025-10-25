@@ -3377,15 +3377,15 @@ class AITCMMSSystem:
 
         # Get selected template data
         item = self.templates_tree.item(selected[0])
-        bfm_no = item['values'][0]
+        bfm_no = str(item['values'][0])
         template_name = item['values'][1]
 
         # Fetch full template data
         cursor = self.conn.cursor()
         cursor.execute('''
-            SELECT id, bfm_equipment_no, template_name, pm_type, checklist_items, 
+            SELECT id, bfm_equipment_no, template_name, pm_type, checklist_items,
                 special_instructions, safety_notes, estimated_hours
-            FROM pm_templates 
+            FROM pm_templates
             WHERE bfm_equipment_no = %s AND template_name = %s
         ''', (bfm_no, template_name))
 
@@ -3620,9 +3620,9 @@ class AITCMMSSystem:
             return
     
         item = self.templates_tree.item(selected[0])
-        bfm_no = item['values'][0]
+        bfm_no = str(item['values'][0])
         template_name = item['values'][1]
-    
+
         # Get template data
         cursor = self.conn.cursor()
         cursor.execute('''
@@ -3701,7 +3701,7 @@ class AITCMMSSystem:
             return
 
         item = self.templates_tree.item(selected[0])
-        bfm_no = item['values'][0]
+        bfm_no = str(item['values'][0])
         template_name = item['values'][1]
         pm_type = item['values'][2]
         steps_count = item['values'][3]
@@ -3739,9 +3739,9 @@ class AITCMMSSystem:
             return
     
         item = self.templates_tree.item(selected[0])
-        bfm_no = item['values'][0]
+        bfm_no = str(item['values'][0])
         template_name = item['values'][1]
-    
+
         # Get template and equipment data
         cursor = self.conn.cursor()
         cursor.execute('''
@@ -5302,9 +5302,9 @@ class AITCMMSSystem:
             return
     
         item = self.templates_tree.item(selected[0])
-        bfm_no = item['values'][0]
+        bfm_no = str(item['values'][0])
         template_name = item['values'][1]
-    
+
         # Get template data
         cursor = self.conn.cursor()
         cursor.execute('''
@@ -5381,20 +5381,20 @@ class AITCMMSSystem:
         if not selected:
             messagebox.showwarning("Warning", "Please select a template to delete")
             return
-    
+
         item = self.templates_tree.item(selected[0])
-        bfm_no = item['values'][0]
+        bfm_no = str(item['values'][0])
         template_name = item['values'][1]
-    
-        result = messagebox.askyesno("Confirm Delete", 
+
+        result = messagebox.askyesno("Confirm Delete",
                                 f"Delete PM template '{template_name}' for {bfm_no}?\n\n"
                                 f"This action cannot be undone.")
-    
+
         if result:
             try:
                 cursor = self.conn.cursor()
                 cursor.execute('''
-                    DELETE FROM pm_templates 
+                    DELETE FROM pm_templates
                     WHERE bfm_equipment_no = %s AND template_name = %s
                 ''', (bfm_no, template_name))
             
@@ -5413,9 +5413,9 @@ class AITCMMSSystem:
             return
     
         item = self.templates_tree.item(selected[0])
-        bfm_no = item['values'][0]
+        bfm_no = str(item['values'][0])
         template_name = item['values'][1]
-    
+
         # Get template and equipment data
         cursor = self.conn.cursor()
         cursor.execute('''
@@ -9198,10 +9198,10 @@ class AITCMMSSystem:
         if not selected:
             messagebox.showwarning("Warning", "Please select an asset to mark as found")
             return
-    
+
         item = self.cannot_find_tree.item(selected[0])
-        bfm_no = item['values'][0]
-    
+        bfm_no = str(item['values'][0])
+
         try:
             cursor = self.conn.cursor()
             cursor.execute('UPDATE cannot_find_assets SET status = "Found" WHERE bfm_equipment_no = %s', (bfm_no,))
@@ -12616,7 +12616,7 @@ class AITCMMSSystem:
 
         # Get selected equipment data
         item = self.equipment_tree.item(selected[0])
-        bfm_no = item['values'][1]  # BFM Equipment No.
+        bfm_no = str(item['values'][1])  # BFM Equipment No.
 
         # Fetch full equipment data
         cursor = self.conn.cursor()
