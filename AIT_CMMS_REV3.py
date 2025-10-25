@@ -4375,11 +4375,23 @@ class AITCMMSSystem:
     
         # Team members as specified - MUST be defined before login dialog
         self.technicians = [
-            "Mark Michaels", "Jerone Bosarge", "Jon Hymel", "Nick Whisenant", 
+            "Mark Michaels", "Jerone Bosarge", "Jon Hymel", "Nick Whisenant",
             "James Dunnam", "Wayne Dunnam", "Nate Williams", "Rey Marikit", "Ronald Houghs",
         ]
-    
-        # Show login dialog after technicians are defined
+
+        # ===== Initialize Database Connection Pool BEFORE Login =====
+        # This must happen before login dialog because login needs database access
+        print("Starting AIT CMMS Application...")
+        try:
+            db_pool.initialize(self.DB_CONFIG, min_conn=2, max_conn=10)
+            print("Database connection pool initialized successfully")
+        except Exception as e:
+            messagebox.showerror("Database Error",
+                f"Failed to initialize database connection:\n{str(e)}\n\nPlease check your internet connection and try again.")
+            self.root.destroy()
+            return
+
+        # Show login dialog after database pool is ready
         if not self.show_login_dialog():
             self.root.destroy()
             return
@@ -5810,9 +5822,7 @@ class AITCMMSSystem:
     def init_database(self):
         """Initialize comprehensive CMMS database with Neon PostgreSQL and connection pooling"""
         try:
-            # Initialize connection pool for multi-user support (3-5 concurrent users)
-            db_pool.initialize(self.DB_CONFIG, min_conn=2, max_conn=10)
-
+            # Connection pool is already initialized before login
             # Get a connection from the pool for initial setup
             self.conn = db_pool.get_connection()
             self.conn.autocommit = False  # Manual commit control
