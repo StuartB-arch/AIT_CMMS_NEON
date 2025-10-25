@@ -739,14 +739,14 @@ def generate_monthly_summary_report(conn, month=None, year=None):
     # 1. OVERALL MONTHLY SUMMARY - PM COMPLETIONS ONLY
     # Get PM completions count
     cursor.execute('''
-        SELECT 
+        SELECT
             COUNT(*) as total_completions,
             SUM(labor_hours + labor_minutes/60.0) as total_hours,
             AVG(labor_hours + labor_minutes/60.0) as avg_hours
-        FROM pm_completions 
-        WHERE strftime('%Y', completion_date) = %s
-        AND strftime('%m', completion_date) = %s
-    ''', (str(year), f"{month:02d}"))
+        FROM pm_completions
+        WHERE EXTRACT(YEAR FROM completion_date::date) = %s
+        AND EXTRACT(MONTH FROM completion_date::date) = %s
+    ''', (year, month))
     
     pm_results = cursor.fetchone()
     pm_completions = pm_results[0] or 0
@@ -756,20 +756,20 @@ def generate_monthly_summary_report(conn, month=None, year=None):
     # Get Cannot Find entries count (separate)
     cursor.execute('''
         SELECT COUNT(*)
-        FROM cannot_find_assets 
-        WHERE strftime('%Y', reported_date) = %s
-        AND strftime('%m', reported_date) = %s
-    ''', (str(year), f"{month:02d}"))
+        FROM cannot_find_assets
+        WHERE EXTRACT(YEAR FROM reported_date::date) = %s
+        AND EXTRACT(MONTH FROM reported_date::date) = %s
+    ''', (year, month))
     
     cf_count = cursor.fetchone()[0] or 0
     
     # Get Run to Failure entries count (separate)
     cursor.execute('''
         SELECT COUNT(*)
-        FROM run_to_failure_assets 
-        WHERE strftime('%Y', completion_date) = %s
-        AND strftime('%m', completion_date) = %s
-    ''', (str(year), f"{month:02d}"))
+        FROM run_to_failure_assets
+        WHERE EXTRACT(YEAR FROM completion_date::date) = %s
+        AND EXTRACT(MONTH FROM completion_date::date) = %s
+    ''', (year, month))
     
     rtf_count = cursor.fetchone()[0] or 0
     
@@ -777,57 +777,46 @@ def generate_monthly_summary_report(conn, month=None, year=None):
     # CMs created this month
     cursor.execute('''
         SELECT COUNT(*)
-        FROM corrective_maintenance 
-        WHERE strftime('%Y', created_date) = %s
-        AND strftime('%m', created_date) = %s
-    ''', (str(year), f"{month:02d}"))
-    
-    cms_created = cursor.fetchone()[0] or 0
-    
-    # Get CM statistics
-    # CMs created this month
-    cursor.execute('''
-        SELECT COUNT(*)
-        FROM corrective_maintenance 
-        WHERE strftime('%Y', created_date) = %s
-        AND strftime('%m', created_date) = %s
-    ''', (str(year), f"{month:02d}"))
+        FROM corrective_maintenance
+        WHERE EXTRACT(YEAR FROM created_date::date) = %s
+        AND EXTRACT(MONTH FROM created_date::date) = %s
+    ''', (year, month))
 
     cms_created = cursor.fetchone()[0] or 0
 
     # CMs completed/closed this month (TOTAL)
     cursor.execute('''
         SELECT COUNT(*)
-        FROM corrective_maintenance 
-        WHERE strftime('%Y', completion_date) = %s
-        AND strftime('%m', completion_date) = %s
+        FROM corrective_maintenance
+        WHERE EXTRACT(YEAR FROM completion_date::date) = %s
+        AND EXTRACT(MONTH FROM completion_date::date) = %s
         AND (status = 'Closed' OR status = 'Completed')
-    ''', (str(year), f"{month:02d}"))
+    ''', (year, month))
 
     cms_closed = cursor.fetchone()[0] or 0
 
     # NEW: CMs created AND closed in the same month
     cursor.execute('''
         SELECT COUNT(*)
-        FROM corrective_maintenance 
-        WHERE strftime('%Y', created_date) = %s
-        AND strftime('%m', created_date) = %s
-        AND strftime('%Y', completion_date) = %s
-        AND strftime('%m', completion_date) = %s
+        FROM corrective_maintenance
+        WHERE EXTRACT(YEAR FROM created_date::date) = %s
+        AND EXTRACT(MONTH FROM created_date::date) = %s
+        AND EXTRACT(YEAR FROM completion_date::date) = %s
+        AND EXTRACT(MONTH FROM completion_date::date) = %s
         AND (status = 'Closed' OR status = 'Completed')
-    ''', (str(year), f"{month:02d}", str(year), f"{month:02d}"))
+    ''', (year, month, year, month))
 
     cms_created_and_closed = cursor.fetchone()[0] or 0
 
     # NEW: CMs created BEFORE this month but closed this month
     cursor.execute('''
         SELECT COUNT(*)
-        FROM corrective_maintenance 
-        WHERE (strftime('%Y', created_date) != %s OR strftime('%m', created_date) != %s)
-        AND strftime('%Y', completion_date) = %s
-        AND strftime('%m', completion_date) = %s
+        FROM corrective_maintenance
+        WHERE (EXTRACT(YEAR FROM created_date::date) != %s OR EXTRACT(MONTH FROM created_date::date) != %s)
+        AND EXTRACT(YEAR FROM completion_date::date) = %s
+        AND EXTRACT(MONTH FROM completion_date::date) = %s
         AND (status = 'Closed' OR status = 'Completed')
-    ''', (str(year), f"{month:02d}", str(year), f"{month:02d}"))
+    ''', (year, month, year, month))
 
     cms_closed_from_before = cursor.fetchone()[0] or 0
 
@@ -863,12 +852,12 @@ def generate_monthly_summary_report(conn, month=None, year=None):
                 completion_date,
                 assigned_technician
             FROM corrective_maintenance 
-            WHERE (strftime('%Y', created_date) != %s OR strftime('%m', created_date) != %s)
-            AND strftime('%Y', completion_date) = %s 
-            AND strftime('%m', completion_date) = %s
+            WHERE (EXTRACT(YEAR FROM created_date::date) != %s OR EXTRACT(MONTH FROM created_date::date) != %s)
+            AND EXTRACT(YEAR FROM completion_date::date) = %s
+            AND EXTRACT(MONTH FROM completion_date::date) = %s
             AND (status = 'Closed' OR status = 'Completed')
             ORDER BY completion_date
-        ''', (str(year), f"{month:02d}", str(year), f"{month:02d}"))
+        ''', (year, month, year, month))
     
         old_cms = cursor.fetchall()
     
@@ -902,17 +891,17 @@ def generate_monthly_summary_report(conn, month=None, year=None):
     
     # 2. PM TYPE BREAKDOWN (PM Completions only)
     cursor.execute('''
-        SELECT 
+        SELECT
             pm_type,
             COUNT(*) as count,
             SUM(labor_hours + labor_minutes/60.0) as total_hours,
             AVG(labor_hours + labor_minutes/60.0) as avg_hours
-        FROM pm_completions 
-        WHERE strftime('%Y', completion_date) = %s
-        AND strftime('%m', completion_date) = %s
+        FROM pm_completions
+        WHERE EXTRACT(YEAR FROM completion_date::date) = %s
+        AND EXTRACT(MONTH FROM completion_date::date) = %s
         GROUP BY pm_type
         ORDER BY count DESC
-    ''', (str(year), f"{month:02d}"))
+    ''', (year, month))
     
     pm_types = cursor.fetchall()
     
@@ -928,16 +917,16 @@ def generate_monthly_summary_report(conn, month=None, year=None):
     
     # 3. DAILY COMPLETION TRACKING (PM Completions only)
     cursor.execute('''
-        SELECT 
+        SELECT
             completion_date,
             COUNT(*) as daily_count,
             SUM(labor_hours + labor_minutes/60.0) as daily_hours
-        FROM pm_completions 
-        WHERE strftime('%Y', completion_date) = %s
-        AND strftime('%m', completion_date) = %s 
+        FROM pm_completions
+        WHERE EXTRACT(YEAR FROM completion_date::date) = %s
+        AND EXTRACT(MONTH FROM completion_date::date) = %s
         GROUP BY completion_date
         ORDER BY completion_date
-    ''', (str(year), f"{month:02d}"))
+    ''', (year, month))
     
     daily_data = cursor.fetchall()
     
@@ -955,17 +944,17 @@ def generate_monthly_summary_report(conn, month=None, year=None):
     
     # 4. TECHNICIAN PERFORMANCE (PM Completions only)
     cursor.execute('''
-        SELECT 
+        SELECT
             technician_name,
             COUNT(*) as completions,
             SUM(labor_hours + labor_minutes/60.0) as total_hours,
             AVG(labor_hours + labor_minutes/60.0) as avg_hours
-        FROM pm_completions 
-        WHERE strftime('%Y', completion_date) = %s 
-        AND strftime('%m', completion_date) = %s 
+        FROM pm_completions
+        WHERE EXTRACT(YEAR FROM completion_date::date) = %s
+        AND EXTRACT(MONTH FROM completion_date::date) = %s
         GROUP BY technician_name
         ORDER BY completions DESC
-    ''', (str(year), f"{month:02d}"))
+    ''', (year, month))
     
     technicians = cursor.fetchall()
     
@@ -981,14 +970,14 @@ def generate_monthly_summary_report(conn, month=None, year=None):
     
     # 5. CM BREAKDOWN BY PRIORITY AND TECHNICIAN
     cursor.execute('''
-        SELECT 
+        SELECT
             priority,
             COUNT(*) as count
-        FROM corrective_maintenance 
-        WHERE strftime('%Y', created_date) = %s 
-        AND strftime('%m', created_date) = %s
+        FROM corrective_maintenance
+        WHERE EXTRACT(YEAR FROM created_date::date) = %s
+        AND EXTRACT(MONTH FROM created_date::date) = %s
         GROUP BY priority
-        ORDER BY 
+        ORDER BY
             CASE priority
                 WHEN 'Critical' THEN 1
                 WHEN 'High' THEN 2
@@ -996,7 +985,7 @@ def generate_monthly_summary_report(conn, month=None, year=None):
                 WHEN 'Low' THEN 4
                 ELSE 5
             END
-    ''', (str(year), f"{month:02d}"))
+    ''', (year, month))
     
     cm_priorities = cursor.fetchall()
     
@@ -1010,16 +999,16 @@ def generate_monthly_summary_report(conn, month=None, year=None):
     
     # CM completion by technician
     cursor.execute('''
-        SELECT 
+        SELECT
             assigned_technician,
             COUNT(*) as completed
-        FROM corrective_maintenance 
-        WHERE strftime('%Y', completion_date) = %s 
-        AND strftime('%m', completion_date) = %s 
+        FROM corrective_maintenance
+        WHERE EXTRACT(YEAR FROM completion_date::date) = %s
+        AND EXTRACT(MONTH FROM completion_date::date) = %s
         AND (status = 'Closed' OR status = 'Completed')
         GROUP BY assigned_technician
         ORDER BY completed DESC
-    ''', (str(year), f"{month:02d}"))
+    ''', (year, month))
     
     cm_techs = cursor.fetchall()
     
@@ -1033,17 +1022,17 @@ def generate_monthly_summary_report(conn, month=None, year=None):
     
     # 6. EQUIPMENT LOCATION SUMMARY (PM Completions only)
     cursor.execute('''
-        SELECT 
+        SELECT
             e.location,
             COUNT(*) as completions,
             SUM(pc.labor_hours + pc.labor_minutes/60.0) as total_hours
         FROM pm_completions pc
         JOIN equipment e ON pc.bfm_equipment_no = e.bfm_equipment_no
-        WHERE strftime('%Y', pc.completion_date) = %s 
-        AND strftime('%m', pc.completion_date) = %s 
+        WHERE EXTRACT(YEAR FROM pc.completion_date::date) = %s
+        AND EXTRACT(MONTH FROM pc.completion_date::date) = %s
         GROUP BY e.location
         ORDER BY completions DESC
-    ''', (str(year), f"{month:02d}"))
+    ''', (year, month))
     
     locations = cursor.fetchall()
     
@@ -1193,16 +1182,16 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
     
         # Get CM data
         cursor.execute('''
-            SELECT COUNT(*) FROM corrective_maintenance 
-            WHERE strftime('%Y', created_date) = %s AND strftime('%m', created_date) = %s 
-        ''', (str(year), f"{month:02d}"))
+            SELECT COUNT(*) FROM corrective_maintenance
+            WHERE EXTRACT(YEAR FROM created_date::date) = %s AND EXTRACT(MONTH FROM created_date::date) = %s
+        ''', (year, month))
         cms_created = cursor.fetchone()[0] or 0
-    
+
         cursor.execute('''
-            SELECT COUNT(*) FROM corrective_maintenance 
-            WHERE strftime('%Y', completion_date) = %s  AND strftime('%m', completion_date) = %s 
+            SELECT COUNT(*) FROM corrective_maintenance
+            WHERE EXTRACT(YEAR FROM completion_date::date) = %s  AND EXTRACT(MONTH FROM completion_date::date) = %s
             AND (status = 'Closed' OR status = 'Completed')
-        ''', (str(year), f"{month:02d}"))
+        ''', (year, month))
         cms_closed = cursor.fetchone()[0] or 0
         
         # Summary highlights table
@@ -1244,19 +1233,19 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
     
         # Get CM breakdown
         cursor.execute('''
-            SELECT COUNT(*) FROM corrective_maintenance 
-            WHERE strftime('%Y', created_date) = %s AND strftime('%m', created_date) = %s
-            AND strftime('%Y', completion_date) = %s AND strftime('%m', completion_date) = %s
+            SELECT COUNT(*) FROM corrective_maintenance
+            WHERE EXTRACT(YEAR FROM created_date::date) = %s AND EXTRACT(MONTH FROM created_date::date) = %s
+            AND EXTRACT(YEAR FROM completion_date::date) = %s AND EXTRACT(MONTH FROM completion_date::date) = %s
             AND (status = 'Closed' OR status = 'Completed')
-        ''', (str(year), f"{month:02d}", str(year), f"{month:02d}"))
+        ''', (year, month, year, month))
         cms_created_and_closed = cursor.fetchone()[0] or 0
-    
+
         cursor.execute('''
-            SELECT COUNT(*) FROM corrective_maintenance 
-            WHERE (strftime('%Y', created_date) != %s OR strftime('%m', created_date) != %s)
-            AND strftime('%Y', completion_date) = %s AND strftime('%m', completion_date) = %s
+            SELECT COUNT(*) FROM corrective_maintenance
+            WHERE (EXTRACT(YEAR FROM created_date::date) != %s OR EXTRACT(MONTH FROM created_date::date) != %s)
+            AND EXTRACT(YEAR FROM completion_date::date) = %s AND EXTRACT(MONTH FROM completion_date::date) = %s
             AND (status = 'Closed' OR status = 'Completed')
-        ''', (str(year), f"{month:02d}", str(year), f"{month:02d}"))
+        ''', (year, month, year, month))
         cms_closed_from_before = cursor.fetchone()[0] or 0
     
         cursor.execute("SELECT COUNT(*) FROM corrective_maintenance WHERE status = 'Open'")
@@ -1302,12 +1291,12 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
         
             cursor.execute('''
                 SELECT cm_number, bfm_equipment_no, created_date, completion_date, assigned_technician
-                FROM corrective_maintenance 
-                WHERE (strftime('%Y', created_date) != %s OR strftime('%m', created_date) != %s)
-                AND strftime('%Y', completion_date) = %s AND strftime('%m', completion_date) = %s
+                FROM corrective_maintenance
+                WHERE (EXTRACT(YEAR FROM created_date::date) != %s OR EXTRACT(MONTH FROM created_date::date) != %s)
+                AND EXTRACT(YEAR FROM completion_date::date) = %s AND EXTRACT(MONTH FROM completion_date::date) = %s
                 AND (status = 'Closed' OR status = 'Completed')
                 ORDER BY completion_date
-            ''', (str(year), f"{month:02d}", str(year), f"{month:02d}"))
+            ''', (year, month, year, month))
         
             old_cms = cursor.fetchall()
         
@@ -1346,14 +1335,14 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
         story.append(Spacer(1, 10))
     
         cursor.execute('''
-            SELECT pm_type, COUNT(*) as count, 
+            SELECT pm_type, COUNT(*) as count,
                 SUM(labor_hours + labor_minutes/60.0) as total_hours,
                 AVG(labor_hours + labor_minutes/60.0) as avg_hours
-            FROM pm_completions 
-            WHERE strftime('%Y', completion_date) = %s AND strftime('%m', completion_date) = %s
+            FROM pm_completions
+            WHERE EXTRACT(YEAR FROM completion_date::date) = %s AND EXTRACT(MONTH FROM completion_date::date) = %s
             GROUP BY pm_type
             ORDER BY count DESC
-        ''', (str(year), f"{month:02d}"))
+        ''', (year, month))
     
         pm_types = cursor.fetchall()
     
@@ -1397,11 +1386,11 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
         cursor.execute('''
             SELECT completion_date, COUNT(*) as daily_count,
                 SUM(labor_hours + labor_minutes/60.0) as daily_hours
-            FROM pm_completions 
-            WHERE strftime('%Y', completion_date) = %s AND strftime('%m', completion_date) = %s
+            FROM pm_completions
+            WHERE EXTRACT(YEAR FROM completion_date::date) = %s AND EXTRACT(MONTH FROM completion_date::date) = %s
             GROUP BY completion_date
             ORDER BY completion_date
-        ''', (str(year), f"{month:02d}"))
+        ''', (year, month))
     
         daily_data_raw = cursor.fetchall()
     
@@ -10852,13 +10841,13 @@ class AITCMMSSystem:
         
             # Monthly completion trends (last 12 months)
             cursor.execute('''
-                SELECT 
-                    strftime('%Y-%m', completion_date) as month,
+                SELECT
+                    TO_CHAR(completion_date::date, 'YYYY-MM') as month,
                     COUNT(*) as completions,
                     AVG(labor_hours + labor_minutes/60.0) as avg_hours
                 FROM pm_completions
-                WHERE completion_date >= DATE('now', '-12 months')
-                GROUP BY strftime('%Y-%m', completion_date)
+                WHERE completion_date::date >= CURRENT_DATE - INTERVAL '12 months'
+                GROUP BY TO_CHAR(completion_date::date, 'YYYY-MM')
                 ORDER BY month DESC
             ''')
             monthly_trends = cursor.fetchall()
@@ -11167,14 +11156,14 @@ class AITCMMSSystem:
         
             # Workload distribution analysis
             cursor.execute('''
-                SELECT 
+                SELECT
                     technician_name,
-                    strftime('%Y-%m', completion_date) as month,
+                    TO_CHAR(completion_date::date, 'YYYY-MM') as month,
                     COUNT(*) as monthly_completions,
                     AVG(labor_hours + labor_minutes/60.0) as avg_hours
                 FROM pm_completions
-                WHERE completion_date >= DATE('now', '-6 months')
-                GROUP BY technician_name, strftime('%Y-%m', completion_date)
+                WHERE completion_date::date >= CURRENT_DATE - INTERVAL '6 months'
+                GROUP BY technician_name, TO_CHAR(completion_date::date, 'YYYY-MM')
                 ORDER BY technician_name, month DESC
             ''')
             monthly_workload = cursor.fetchall()
@@ -11491,8 +11480,8 @@ class AITCMMSSystem:
 
             # Monthly completion data (last 24 months)
             cursor.execute('''
-                SELECT 
-                    strftime('%Y-%m', completion_date) as month,
+                SELECT
+                    TO_CHAR(completion_date::date, 'YYYY-MM') as month,
                     COUNT(*) as total_completions,
                     COUNT(CASE WHEN pm_type = 'Monthly' THEN 1 END) as monthly_pms,
                     COUNT(CASE WHEN pm_type = 'Annual' THEN 1 END) as annual_pms,
@@ -11501,8 +11490,8 @@ class AITCMMSSystem:
                     COUNT(DISTINCT technician_name) as active_technicians,
                     COUNT(DISTINCT bfm_equipment_no) as unique_equipment
                 FROM pm_completions
-                WHERE completion_date >= DATE('now', '-24 months')
-                GROUP BY strftime('%Y-%m', completion_date)
+                WHERE completion_date::date >= CURRENT_DATE - INTERVAL '24 months'
+                GROUP BY TO_CHAR(completion_date::date, 'YYYY-MM')
                 ORDER BY month ASC
             ''')
 
@@ -11807,12 +11796,12 @@ class AITCMMSSystem:
             # Monthly performance trends for each technician
             cursor.execute('''
                 SELECT technician_name,
-                       strftime('%Y-%m', completion_date) as month,
+                       TO_CHAR(completion_date::date, 'YYYY-MM') as month,
                        COUNT(*) as completions,
                        AVG(labor_hours + labor_minutes/60.0) as avg_hours
                 FROM pm_completions
-                WHERE completion_date >= DATE('now', '-12 months')
-                GROUP BY technician_name, strftime('%Y-%m', completion_date)
+                WHERE completion_date::date >= CURRENT_DATE - INTERVAL '12 months'
+                GROUP BY technician_name, TO_CHAR(completion_date::date, 'YYYY-MM')
                 ORDER BY technician_name, month
             ''')
 
@@ -11943,13 +11932,13 @@ class AITCMMSSystem:
 
             # Monthly PM type distribution
             cursor.execute('''
-                SELECT strftime('%Y-%m', completion_date) as month,
+                SELECT TO_CHAR(completion_date::date, 'YYYY-MM') as month,
                        pm_type,
                        COUNT(*) as completions,
                        AVG(labor_hours + labor_minutes/60.0) as avg_hours
                 FROM pm_completions
-                WHERE completion_date >= DATE('now', '-12 months')
-                GROUP BY strftime('%Y-%m', completion_date), pm_type
+                WHERE completion_date::date >= CURRENT_DATE - INTERVAL '12 months'
+                GROUP BY TO_CHAR(completion_date::date, 'YYYY-MM'), pm_type
                 ORDER BY month, pm_type
             ''')
 
@@ -12068,17 +12057,17 @@ class AITCMMSSystem:
 
             # Seasonal PM type patterns
             cursor.execute('''
-                SELECT 
-                    CASE 
-                        WHEN CAST(strftime('%m', completion_date) AS INTEGER) IN (12, 1, 2) THEN 'Winter'
-                        WHEN CAST(strftime('%m', completion_date) AS INTEGER) IN (3, 4, 5) THEN 'Spring'
-                        WHEN CAST(strftime('%m', completion_date) AS INTEGER) IN (6, 7, 8) THEN 'Summer'
-                        WHEN CAST(strftime('%m', completion_date) AS INTEGER) IN (9, 10, 11) THEN 'Fall'
+                SELECT
+                    CASE
+                        WHEN EXTRACT(MONTH FROM completion_date::date) IN (12, 1, 2) THEN 'Winter'
+                        WHEN EXTRACT(MONTH FROM completion_date::date) IN (3, 4, 5) THEN 'Spring'
+                        WHEN EXTRACT(MONTH FROM completion_date::date) IN (6, 7, 8) THEN 'Summer'
+                        WHEN EXTRACT(MONTH FROM completion_date::date) IN (9, 10, 11) THEN 'Fall'
                     END as season,
                     pm_type,
                     COUNT(*) as completions
                 FROM pm_completions
-                WHERE completion_date >= DATE('now', '-12 months')
+                WHERE completion_date::date >= CURRENT_DATE - INTERVAL '12 months'
                 GROUP BY season, pm_type
                 ORDER BY season, pm_type
             ''')
