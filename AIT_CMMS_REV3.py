@@ -2916,392 +2916,33 @@ class AITCMMSSystem:
     
     
     
-    def sync_database_on_startup(self):
-        """Lighter sync check after initialization (already handled in pre-init)"""
-        try:
-            if not hasattr(self, 'backup_sync_dir'):
-                return False
-        
-            # Just update the status, heavy lifting was done in pre-init sync
-            if os.path.exists('ait_cmms_database.db'):
-                self.update_status("Database loaded - SharePoint sync completed during startup")
-                return True
-            else:
-                self.update_status("Database initialization completed")
-                return False
-            
-        except Exception as e:
-            print(f"Error in startup sync check: {e}")
-            return False
-    
-    
-    
-    
-    
-    def get_sharepoint_backup_path(self):
-        """Get path to specific SharePoint PM/CM folder with comprehensive fallbacks"""
-        try:
-            home_dir = os.path.expanduser("~")
-        
-            print("\n" + "=" * 60)
-            print("SEARCHING FOR SHAREPOINT BACKUP FOLDER")
-            print("=" * 60)
-    
-            # PRIMARY target: Shared team SharePoint site (THE CORRECT ONE!)
-            primary_sharepoint_path = os.path.join(home_dir, "Advanced Integration Technology", "PM CM - CMMS_Backups")
-        
-            print(f"Checking PRIMARY location: {primary_sharepoint_path}")
-            if os.path.exists(primary_sharepoint_path) and os.path.isdir(primary_sharepoint_path):
-                # Test write permissions
-                test_file = os.path.join(primary_sharepoint_path, "test_write.tmp")
-                try:
-                    with open(test_file, 'w') as f:
-                        f.write("test")
-                    os.remove(test_file)
-                    print(f"CHECK: SUCCESS! Using SHARED team SharePoint location:")
-                    print(f"  {primary_sharepoint_path}")
-                    print("=" * 60 + "\n")
-                    return primary_sharepoint_path
-                except Exception as e:
-                    print(f"CHECK: Cannot write to primary path: {e}")
-            else:
-                print(f"CHECK: Primary path does not exist")
-    
-            # Fallback 1: Try with "Asset Maintenance" subfolder structure
-            print("\nTrying fallback with Asset Maintenance structure...")
-            fallback_with_asset = os.path.join(home_dir, "Advanced Integration Technology", "PM CM - General", "Asset Maintenance", "CMMS_Backups")
-            print(f"Checking: {fallback_with_asset}")
-        
-            sharepoint_parent = os.path.dirname(fallback_with_asset)
-            if os.path.exists(sharepoint_parent) and os.path.isdir(sharepoint_parent):
-                try:
-                    os.makedirs(fallback_with_asset, exist_ok=True)
-                    test_file = os.path.join(fallback_with_asset, "test_write.tmp")
-                    with open(test_file, 'w') as f:
-                        f.write("test")
-                    os.remove(test_file)
-                    print(f"CHECK: Using fallback with Asset Maintenance: {fallback_with_asset}")
-                    print("=" * 60 + "\n")
-                    return fallback_with_asset
-                except Exception as e:
-                    print(f"CHECK: Cannot write: {e}")
-            else:
-                print(f"CHECK: Path does not exist")
-    
-            # Fallback 2: Personal OneDrive PM-CM folder
-            print("\nTrying personal OneDrive location...")
-            work_onedrive_path = os.path.join(home_dir, "OneDrive - Advanced Integration Technology", "PM-CM", "CMMS_Backups")
-            print(f"Checking: {work_onedrive_path}")
-        
-            work_onedrive_root = os.path.join(home_dir, "OneDrive - Advanced Integration Technology")
-            if os.path.exists(work_onedrive_root) and os.path.isdir(work_onedrive_root):
-                try:
-                    os.makedirs(work_onedrive_path, exist_ok=True)
-                    test_file = os.path.join(work_onedrive_path, "test_write.tmp")
-                    with open(test_file, 'w') as f:
-                        f.write("test")
-                    os.remove(test_file)
-                    print(f"CHECK: Using personal OneDrive (not shared team location): {work_onedrive_path}")
-                    print("=" * 60 + "\n")
-                    return work_onedrive_path
-                except Exception as e:
-                    print(f"CHECK: Cannot write: {e}")
-            else:
-                print(f"CHECK: Path does not exist")
-    
-            # Fallback 3: Personal OneDrive root
-            work_onedrive_basic = os.path.join(home_dir, "OneDrive - Advanced Integration Technology", "AIT_CMMS_Backups")
-            print(f"Checking: {work_onedrive_basic}")
-        
-            if os.path.exists(work_onedrive_root) and os.path.isdir(work_onedrive_root):
-                try:
-                    os.makedirs(work_onedrive_basic, exist_ok=True)
-                    test_file = os.path.join(work_onedrive_basic, "test_write.tmp")
-                    with open(test_file, 'w') as f:
-                        f.write("test")
-                    os.remove(test_file)
-                    print(f"CHECK: Using personal OneDrive basic: {work_onedrive_basic}")
-                    print("=" * 60 + "\n")
-                    return work_onedrive_basic
-                except Exception as e:
-                    print(f"CHECK: Cannot write: {e}")
-            else:
-                print(f"CHECK: Path does not exist")
-    
-            # Final fallback: Local Documents folder
-            print("\nUsing final fallback...")
-            local_path = os.path.join(home_dir, "Documents", "AIT_CMMS_Backups")
-            try:
-                os.makedirs(local_path, exist_ok=True)
-                print(f"CHECK: WARNING: Using local Documents folder (not synced): {local_path}")
-                print("=" * 60 + "\n")
-                return local_path
-            except Exception as e:
-                print(f"CHECK: Cannot create local backup folder: {e}")
-                print("=" * 60 + "\n")
-                return None
-    
-        except Exception as e:
-            print(f"CHECK: Error determining SharePoint backup path: {e}")
-            print("=" * 60 + "\n")
-            return None
-
-    
+    # SharePoint backup functions removed - using PostgreSQL only
 
 
-    #def schedule_sharepoint_only_backups(self, sync_dir):
-        """Schedule automatic backups to SharePoint - every 30 seconds"""
-        #try:
-            # Create initial backup immediately (5 seconds after startup)
-            #self.root.after(5000, lambda: self.sharepoint_only_backup(sync_dir))
-            
-            # Schedule frequent backups - run every 30 seconds (30,000 milliseconds)
-            #self.root.after(30 * 1000, lambda: self.recurring_sharepoint_backup(sync_dir))
-        
-            #print(f"Scheduled 30-second SharePoint backups to: {sync_dir}")
-        
-        #except Exception as e:
-            #print(f"Error scheduling SharePoint backups: {e}")
-    
-
-    #def recurring_sharepoint_backup(self, sync_dir):
-        """Recurring backup function that runs every 30 seconds"""
-        #try:
-            # Perform the backup
-            #self.sharepoint_only_backup(sync_dir)
-        
-            # Reschedule for 30 seconds later
-            #self.root.after(30 * 1000, lambda: self.recurring_sharepoint_backup(sync_dir))
-        
-        #except Exception as e:
-            #print(f"Error in recurring backup: {e}")
-            # Try to reschedule anyway
-            #self.root.after(30 * 1000, lambda: self.recurring_sharepoint_backup(sync_dir))
-
-
-    #def auto_sync_after_action(self):
-        """Automatically sync to SharePoint after data entry"""
-        #try:
-            #if hasattr(self, 'backup_sync_dir') and self.backup_sync_dir:
-                # Push changes to SharePoint immediately
-                #self.sharepoint_only_backup(self.backup_sync_dir)
-                #print("Auto-synced to SharePoint after data entry")
-        #except Exception as e:
-            #print(f"Auto-sync error: {e}")
-
-
-
-
-
-
-    def manual_sync_from_sharepoint(self):
-        """Manual sync button - pull latest data from SharePoint"""
-        try:
-            # First, backup current local changes
-            if hasattr(self, 'backup_sync_dir') and self.backup_sync_dir:
-                self.sharepoint_only_backup(self.backup_sync_dir)
-        
-            # Then sync from SharePoint
-            self.sync_database_before_init()
-        
-            # Refresh all views
-            self.load_equipment_data()
-            if hasattr(self, 'load_corrective_maintenance'):
-                self.load_corrective_maintenance()
-            if hasattr(self, 'load_recent_completions'):
-                self.load_recent_completions()
-        
-            messagebox.showinfo("Sync Complete", "Data refreshed from SharePoint!")
-        
-        except Exception as e:
-            messagebox.showerror("Sync Error", f"Failed to sync: {str(e)}")
-
-
-    #def schedule_sharepoint_only_backups(self, sync_dir):
-        """Schedule daily automatic backups only"""
-        #try:
-            # Schedule daily backups - run every 24 hours from now
-            #self.root.after(24 * 60 * 60 * 1000, lambda: self.recurring_sharepoint_backup(sync_dir))
-        
-            #print(f"Scheduled daily SharePoint backups to: {sync_dir}")
-        
-        #except Exception as e:
-            #print(f"Error scheduling SharePoint backups: {e}")
-
-    
     def on_closing(self):
-        """Enhanced closing with conflict detection and comprehensive smart merge"""
+        """Close application and database connection"""
         try:
-            # Check if SharePoint was updated during our session
-            conflict_detected = self.check_for_conflicts()
-        
-            if conflict_detected:
-                # Show smart merge dialog
-                merge_result = self.show_smart_merge_dialog()
-            
-                if merge_result == "cancel":
-                    return  # Don't close
-                elif merge_result == "merge":
-                    # Perform comprehensive smart merge
-                    self.perform_comprehensive_merge_and_close()
-                elif merge_result == "override":
-                    # User chose to override (dangerous)
-                    self.backup_and_close_normal()
-            else:
-                # No conflicts - normal close with validation
-                sync_result = self.show_closing_sync_dialog()
-            
-                if sync_result == "cancel":
-                    return
-                elif sync_result == "close_without_sync":
-                    if hasattr(self, 'conn'):
-                        self.conn.close()
-                    self.root.destroy()
-                elif sync_result == "sync_and_close":
-                    self.backup_and_close_normal()
-                
-        except Exception as e:
-            print(f"Error during closing: {e}")
             result = messagebox.askyesno(
-                "Error During Close",
-                f"Error: {str(e)}\n\nForce close anyway?",
-                icon='warning'
+                "Confirm Exit",
+                "Are you sure you want to close the application?",
+                icon='question'
             )
+
             if result:
                 try:
                     if hasattr(self, 'conn') and self.conn:
-                        try:
-                            self.conn.commit()  # Save any pending changes
-                            self.conn.close()
-                            print("CHECK: Database connection closed safely")
-                        except Exception as e:
-                            print(f"WARNING: Error closing connection: {e}")
-                except:
-                    pass
+                        self.conn.commit()  # Save any pending changes
+                        self.conn.close()
+                        print("CHECK: Database connection closed safely")
+                except Exception as e:
+                    print(f"WARNING: Error closing connection: {e}")
                 self.root.destroy()
 
+        except Exception as e:
+            print(f"Error during closing: {e}")
+            self.root.destroy()
 
-
-    def sharepoint_only_backup(self, sync_dir):
-        """Create backup directly in SharePoint folder only - FIXED VERSION"""
-        try:
-            db_file = 'ait_cmms_database.db'
-        
-            # Check if database file exists
-            if not os.path.exists(db_file):
-                print(f"Database file {db_file} not found for backup")
-                return
-            
-            # Close current connection temporarily for clean backup
-            if hasattr(self, 'conn'):
-                try:
-                    self.conn.close()
-                except:
-                    pass
-        
-            # Create timestamped backup filename
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            backup_file = os.path.join(sync_dir, f"ait_cmms_backup_{timestamp}.db")
-            
-            # Copy database file directly to backup location
-            shutil.copy2(db_file, backup_file)
-            
-            # Reopen connection
-            self.conn = sqlite3.connect(db_file)
-            
-            # Clean up old backups (keep last 10)
-            self.cleanup_old_backups(sync_dir, keep_last=10)
-            
-            self.update_status(f"Backup created: {os.path.basename(backup_file)}")
-            print(f"Backup successful: {backup_file}")
-        
-        except Exception as e:
-            error_msg = f"Backup failed: {e}"
-            self.update_status(error_msg)
-            print(error_msg)
-            # Try to reopen connection if it failed
-            try:
-                self.conn = sqlite3.connect('ait_cmms_database.db')
-            except:
-                pass
-
-    def cleanup_old_backups(self, backup_dir, keep_last=10):
-        """Keep only the most recent backup files in SharePoint"""
-        try:
-            # Get all backup files
-            backup_files = []
-            for f in os.listdir(backup_dir):
-                if f.startswith('ait_cmms_backup_') and f.endswith('.db'):
-                    full_path = os.path.join(backup_dir, f)
-                    backup_files.append((full_path, os.path.getmtime(full_path)))
-    
-            if len(backup_files) <= keep_last:
-                print(f"Only {len(backup_files)} backups found, no cleanup needed")
-                return  # No cleanup needed
-    
-            # Sort by modification time (newest first)
-            backup_files.sort(key=lambda x: x[1], reverse=True)
-        
-            # Delete older backups
-            deleted_count = 0
-            for old_backup_path, _ in backup_files[keep_last:]:
-                try:
-                    os.remove(old_backup_path)
-                    print(f"Removed old SharePoint backup: {os.path.basename(old_backup_path)}")
-                    deleted_count += 1
-                except Exception as e:
-                    print(f"Error removing old backup {old_backup_path}: {e}")
-                
-            if deleted_count > 0:
-                print(f"Cleaned up {deleted_count} old SharePoint backups, kept {keep_last} most recent")
-            
-        except Exception as e:
-            print(f"Error cleaning up old backups: {e}")
-    
-    
-    def cleanup_local_backups(self):
-        """Remove old timestamped local backup files, keep only the single local backup"""
-        try:
-            import glob
-        
-            # Find all timestamped local backup files
-            pattern = "ait_cmms_database.db.local_backup_*"
-            old_backups = glob.glob(pattern)
-        
-            removed_count = 0
-            for backup_file in old_backups:
-                try:
-                    os.remove(backup_file)
-                    print(f"Removed old local backup: {backup_file}")
-                    removed_count += 1
-                except Exception as e:
-                    print(f"Error removing {backup_file}: {e}")
-        
-            if removed_count > 0:
-                print(f"Cleaned up {removed_count} old local backup files")
-            
-        except Exception as e:
-            print(f"Error cleaning up local backups: {e}")
-    
-    
-    
-    
-    
-    
-    def test_backup_now(self):
-        """Manual backup test for debugging"""
-        try:
-            sync_dir = self.get_sharepoint_backup_path()
-            if sync_dir:
-                self.sharepoint_only_backup(sync_dir)
-                messagebox.showinfo("Test Complete", f"Backup test completed.\nBackup location: {sync_dir}")
-            else:
-                messagebox.showerror("Test Failed", "Could not determine backup location")
-        except Exception as e:
-            messagebox.showerror("Test Error", f"Backup test failed: {str(e)}")
-    
-    
-    
+    # Backup functions removed - using PostgreSQL only
 
     def init_pm_templates_database(self):
         """Initialize PM templates database tables"""
@@ -4719,7 +4360,6 @@ class AITCMMSSystem:
         }
         self.conn = None
         self.session_start_time = datetime.now()
-        self.sharepoint_file_modified_time = None
         self.root.title("AIT Complete CMMS - Computerized Maintenance Management System")
         self.root.geometry("1800x1000")
         try:
@@ -4741,45 +4381,13 @@ class AITCMMSSystem:
         if not self.show_login_dialog():
             self.root.destroy()
             return
-    
-       
 
-        # ===== CRITICAL FIX: SET UP SHAREPOINT BACKUP FIRST =====
-        #self.backup_sync_dir = self.get_sharepoint_backup_path()
-        # Start automatic pull from SharePoint (after setting up backup_sync_dir)
-       
-        # ===== SYNC DATABASE BEFORE INITIALIZING =====
-        # This will download the latest backup if available BEFORE creating local database
-        #database_synced = self.sync_database_before_init()
-    
-        # ===== NOW Initialize database (will use synced version if available) =====
+        # ===== Initialize PostgreSQL Database =====
         self.init_database()
         self.mro_manager = MROStockManager(self)
-        self.parts_integration = CMPartsIntegration(self)  
+        self.parts_integration = CMPartsIntegration(self)
         self.init_pm_templates_database()
-    
-        
-    
-    
-        # ===== CRITICAL FIX: SET UP SHAREPOINT BACKUP FIRST =====
-        #self.backup_sync_dir = self.get_sharepoint_backup_path()
 
-        # ===== SYNC DATABASE BEFORE INITIALIZING =====
-        database_synced = self.sync_database_before_init()
-
-        # ===== NOW Initialize database =====
-        self.init_database()
-        self.init_pm_templates_database()
-        # Clean up old local backups (keep only one)
-        self.cleanup_local_backups()
-
-
-        
-
-        # Light sync check (heavy lifting already done)
-        self.sync_database_on_startup()
-        
-    
         # Add logo header
         self.add_logo_to_main_window()
     
@@ -5081,115 +4689,8 @@ class AITCMMSSystem:
     
     
     
-    def sync_database_before_init(self):
-        """Download and sync with latest database backup BEFORE initializing local database"""
-        try:
-            if not hasattr(self, 'backup_sync_dir') or not self.backup_sync_dir:
-                print("No backup directory configured, skipping pre-init sync")
-                return False
-    
-            backup_dir = self.backup_sync_dir
-            local_db = 'ait_cmms_database.db'
+    # sync_database_before_init removed - using PostgreSQL only
 
-            print("=" * 60)
-            print("STARTING PRE-INIT DATABASE SYNC")
-            print("=" * 60)
-            print(f"Backup directory: {backup_dir}")
-            print(f"Local database: {local_db}")
-
-            # Get all backup files from SharePoint folder
-            if not os.path.exists(backup_dir):
-                print("SharePoint backup folder not found, skipping sync")
-                return False
-    
-            backup_files = []
-            for f in os.listdir(backup_dir):
-                if f.startswith('ait_cmms_backup_') and f.endswith('.db'):
-                    full_path = os.path.join(backup_dir, f)
-                
-                    # FIXED: Extract timestamp from filename instead of using file modification time
-                    try:
-                        # Filename format: ait_cmms_backup_YYYYMMDD_HHMMSS.db
-                        timestamp_str = f.replace('ait_cmms_backup_', '').replace('.db', '')
-                        # Parse the timestamp: 20250929_154522
-                        file_datetime = datetime.strptime(timestamp_str, '%Y%m%d_%H%M%S')
-                        file_timestamp = file_datetime.timestamp()
-                        backup_files.append((full_path, file_timestamp, timestamp_str))
-                        print(f"Found backup: {f} -> {file_datetime}")
-                    except Exception as e:
-                        print(f"Skipping file {f} - couldn't parse timestamp: {e}")
-                        continue
-
-            if not backup_files:
-                print("No backup files found in SharePoint, will start with empty database")
-                return False
-    
-            print(f"\nFound {len(backup_files)} valid backup files")
-    
-            # Find the most recent backup by timestamp in filename
-            backup_files.sort(key=lambda x: x[1], reverse=True)
-            latest_backup_path, latest_backup_time, latest_timestamp = backup_files[0]
-        
-            print(f"\nWARNING: Latest backup file: {os.path.basename(latest_backup_path)}")
-            print(f"   Timestamp: {datetime.fromtimestamp(latest_backup_time)}")
-
-            # Check if local database exists and compare
-            if os.path.exists(local_db):
-                local_db_time = os.path.getmtime(local_db)
-                local_db_size = os.path.getsize(local_db)
-            
-                print(f"\nWARNING: Local database EXISTS")
-                print(f"   Local time: {datetime.fromtimestamp(local_db_time)}")
-                print(f"   Local size: {local_db_size:,} bytes")
-            
-                # If SharePoint backup is newer OR if local database is empty, replace it
-                if latest_backup_time > local_db_time or local_db_size < 10000:
-                    print(f"\nWARNING: SYNCING: SharePoint backup is newer or local database is empty")
-                    print(f"   Backup timestamp: {datetime.fromtimestamp(latest_backup_time)}")
-                    print(f"   Local timestamp:  {datetime.fromtimestamp(local_db_time)}")
-                    print(f"   Backup is newer: {latest_backup_time > local_db_time}")
-                    print(f"   Local is small: {local_db_size < 10000}")
-                
-                    # MODIFIED: Only create ONE local backup, overwrite if exists
-                    if local_db_size > 10000:  # Only backup if local has meaningful content
-                        local_backup_name = "ait_cmms_database_local_backup.db"
-                        if os.path.exists(local_backup_name):
-                            print(f"   Overwriting existing local backup: {local_backup_name}")
-                        else:
-                            print(f"   Creating local backup: {local_backup_name}")
-                        shutil.copy2(local_db, local_backup_name)
-            
-                    # Copy SharePoint backup to local database
-                    print(f"\nWARNING: Copying {os.path.basename(latest_backup_path)} to {local_db}...")
-                    shutil.copy2(latest_backup_path, local_db)
-            
-                    print(f"\nCHECK: Database synced successfully from SharePoint!")
-                    print("=" * 60 + "\n")
-                    return True
-                else:
-                    print(f"\nWARNING:  SKIPPING SYNC: Local database is already current")
-                    print(f"   Backup is newer: {latest_backup_time > local_db_time}")
-                    print(f"   Local is small: {local_db_size < 10000}")
-                    print("=" * 60 + "\n")
-                    return False
-            else:
-                # No local database exists, copy the latest backup
-                print(f"\nCHECK: No local database found")
-                print(f"WARNING: Copying latest backup: {os.path.basename(latest_backup_path)}")
-                shutil.copy2(latest_backup_path, local_db)
-                print(f"\nCHECK: Database initialized from SharePoint backup!")
-                print("=" * 60 + "\n")
-                return True
-    
-        except Exception as e:
-            print(f"\nCHECK: Error in pre-init database sync: {e}")
-            import traceback
-            traceback.print_exc()
-            print("=" * 60 + "\n")
-            return False
-    
-    
-    
     def show_login_dialog(self):
         """Show login dialog to determine user role with password protection for manager"""
         # Ensure we start fresh
@@ -6595,15 +6096,10 @@ class AITCMMSSystem:
         status_frame = ttk.Frame(self.root)
         status_frame.pack(side='bottom', fill='x')
     
-        self.status_bar = ttk.Label(status_frame, text=f"AIT CMMS Ready - Logged in as: {self.user_name} ({self.current_user_role})", 
+        self.status_bar = ttk.Label(status_frame, text=f"AIT CMMS Ready - Logged in as: {self.user_name} ({self.current_user_role})",
                                     relief='sunken')
         self.status_bar.pack(side='left', fill='x', expand=True)
-    
-        ttk.Button(status_frame, text="WARNING: Refresh Data", 
-           command=self.manual_sync_from_sharepoint).pack(side='right', padx=5)
-    
-    
-    
+
         # Role switching button (only for development/testing)
         if self.current_user_role == 'Manager':
             ttk.Button(status_frame, text="Switch to Technician View", 
