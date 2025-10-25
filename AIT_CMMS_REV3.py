@@ -7021,8 +7021,8 @@ class AITCMMSSystem:
         
             cursor.execute('''
                 SELECT pm_type, assigned_technician, scheduled_date, week_start_date, status
-                FROM weekly_pm_schedules 
-                WHERE bfm_equipment_no = %s AND scheduled_date >= DATE('now')
+                FROM weekly_pm_schedules
+                WHERE bfm_equipment_no = %s AND DATE(scheduled_date) >= DATE('now')
                 ORDER BY scheduled_date ASC LIMIT 5
             ''', (bfm_no,))
         
