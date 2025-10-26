@@ -582,9 +582,16 @@ class MROStockManager:
         part_number = str(item['values'][0])  # Convert to string to avoid type mismatch
 
         try:
-            # Get full part data
+            # Get full part data - use explicit column list to ensure correct order
             cursor = self.conn.cursor()
-            cursor.execute('SELECT * FROM mro_inventory WHERE part_number = %s', (part_number,))
+            cursor.execute('''
+                SELECT id, name, part_number, model_number, equipment, engineering_system,
+                       unit_of_measure, quantity_in_stock, unit_price, minimum_stock,
+                       supplier, location, rack, row, bin, picture_1_path,
+                       picture_2_path, picture_1_data, picture_2_data, notes,
+                       last_updated, created_date, status
+                FROM mro_inventory WHERE part_number = %s
+            ''', (part_number,))
             part_data = cursor.fetchone()
 
             if not part_data:
@@ -594,33 +601,33 @@ class MROStockManager:
             self.conn.rollback()
             messagebox.showerror("Database Error", f"Error loading part data: {str(e)}")
             return
-        
+
         # Create edit dialog (similar to add dialog but pre-filled)
         dialog = tk.Toplevel(self.root)
         dialog.title(f"Edit Part: {part_number}")
         dialog.geometry("800x900")
         dialog.transient(self.root)
         dialog.grab_set()
-        
+
         # Create scrollable frame
         canvas = tk.Canvas(dialog)
         scrollbar = ttk.Scrollbar(dialog, orient="vertical", command=canvas.yview)
         scrollable_frame = ttk.Frame(canvas)
-        
+
         scrollable_frame.bind(
             "<Configure>",
             lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
         )
-        
+
         canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
-        
-        # Parse part_data
+
+        # Parse part_data - column order matches SELECT query above
         columns = ['id', 'name', 'part_number', 'model_number', 'equipment', 'engineering_system',
                   'unit_of_measure', 'quantity_in_stock', 'unit_price', 'minimum_stock',
                   'supplier', 'location', 'rack', 'row', 'bin', 'picture_1_path',
                   'picture_2_path', 'picture_1_data', 'picture_2_data', 'notes', 'last_updated', 'created_date', 'status']
-        
+
         part_dict = dict(zip(columns, part_data))
         
         # Form fields (similar structure to add_part_dialog)
@@ -884,9 +891,16 @@ class MROStockManager:
         part_number = str(item['values'][0])  # Convert to string to avoid type mismatch
 
         try:
-            # Get full part data
+            # Get full part data - use explicit column list to ensure correct order
             cursor = self.conn.cursor()
-            cursor.execute('SELECT * FROM mro_inventory WHERE part_number = %s', (part_number,))
+            cursor.execute('''
+                SELECT id, name, part_number, model_number, equipment, engineering_system,
+                       unit_of_measure, quantity_in_stock, unit_price, minimum_stock,
+                       supplier, location, rack, row, bin, picture_1_path,
+                       picture_2_path, picture_1_data, picture_2_data, notes,
+                       last_updated, created_date, status
+                FROM mro_inventory WHERE part_number = %s
+            ''', (part_number,))
             part_data = cursor.fetchone()
 
             if not part_data:
@@ -896,40 +910,40 @@ class MROStockManager:
             self.conn.rollback()
             messagebox.showerror("Database Error", f"Error loading part details: {str(e)}")
             return
-    
+
         # Create details dialog
         dialog = tk.Toplevel(self.root)
         dialog.title(f"Part Details - {part_number}")
         dialog.geometry("900x700")
         dialog.transient(self.root)
-    
+
         # Create notebook for tabs
         notebook = ttk.Notebook(dialog)
         notebook.pack(fill='both', expand=True, padx=10, pady=10)
-        
+
         # ============================================================
         # TAB 1: Part Information
         # ============================================================
         info_frame = ttk.Frame(notebook)
         notebook.add(info_frame, text='📋 Part Information')
-        
+
         # Create scrollable canvas
         canvas = tk.Canvas(info_frame)
         scrollbar = ttk.Scrollbar(info_frame, orient="vertical", command=canvas.yview)
         scrollable_frame = ttk.Frame(canvas)
-        
+
         scrollable_frame.bind(
             "<Configure>",
             lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
         )
-    
+
         canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
-        
+
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
-        
-        # Parse part data
+
+        # Parse part data - order matches SELECT query above
         (id, name, part_num, model, equipment, eng_system, unit, qty_stock,
         unit_price, min_stock, supplier, location, rack, row_num, bin_num,
         pic1_path, pic2_path, pic1_data, pic2_data, notes, last_updated, created_date, status) = part_data
@@ -1546,22 +1560,29 @@ class MROStockManager:
         
         try:
             cursor = self.conn.cursor()
-            cursor.execute('SELECT * FROM mro_inventory ORDER BY part_number')
+            # Select specific columns for export (exclude binary picture data)
+            cursor.execute('''
+                SELECT id, name, part_number, model_number, equipment, engineering_system,
+                       unit_of_measure, quantity_in_stock, unit_price, minimum_stock,
+                       supplier, location, rack, row, bin, picture_1_path, picture_2_path,
+                       notes, last_updated, created_date, status
+                FROM mro_inventory ORDER BY part_number
+            ''')
             rows = cursor.fetchall()
-            
-            columns = ['ID', 'Name', 'Part Number', 'Model Number', 'Equipment', 
-                      'Engineering System', 'Unit of Measure', 'Quantity in Stock', 
-                      'Unit Price', 'Minimum Stock', 'Supplier', 'Location', 'Rack', 
-                      'Row', 'Bin', 'Picture 1', 'Picture 2', 'Notes', 
+
+            columns = ['ID', 'Name', 'Part Number', 'Model Number', 'Equipment',
+                      'Engineering System', 'Unit of Measure', 'Quantity in Stock',
+                      'Unit Price', 'Minimum Stock', 'Supplier', 'Location', 'Rack',
+                      'Row', 'Bin', 'Picture 1 Path', 'Picture 2 Path', 'Notes',
                       'Last Updated', 'Created Date', 'Status']
-            
+
             with open(file_path, 'w', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
                 writer.writerow(columns)
                 writer.writerows(rows)
-            
+
             messagebox.showinfo("Success", f"Inventory exported to:\n{file_path}")
-            
+
         except Exception as e:
             messagebox.showerror("Export Error", f"Failed to export:\n{str(e)}")
     
@@ -1742,55 +1763,60 @@ class MROStockManager:
         # Clear existing items
         for item in self.mro_tree.get_children():
             self.mro_tree.delete(item)
-        
-        # Build query
-        query = 'SELECT * FROM mro_inventory WHERE 1=1'
+
+        # Build query - use explicit column list to ensure correct order
+        query = '''SELECT id, name, part_number, model_number, equipment, engineering_system,
+                          unit_of_measure, quantity_in_stock, unit_price, minimum_stock,
+                          supplier, location, rack, row, bin, picture_1_path,
+                          picture_2_path, picture_1_data, picture_2_data, notes,
+                          last_updated, created_date, status
+                   FROM mro_inventory WHERE 1=1'''
         params = []
-        
+
         if system_filter != 'All':
             query += ' AND engineering_system = %s'
             params.append(system_filter)
-        
+
         if status_filter == 'Low Stock':
             query += ' AND quantity_in_stock < minimum_stock'
         elif status_filter != 'All':
             query += ' AND status = %s'
             params.append(status_filter)
-        
+
         if search_term:
             query += ''' AND (
-                LOWER(name) LIKE %s OR 
-                LOWER(part_number) LIKE %s OR 
-                LOWER(model_number) LIKE %s OR 
-                LOWER(equipment) LIKE %s OR 
+                LOWER(name) LIKE %s OR
+                LOWER(part_number) LIKE %s OR
+                LOWER(model_number) LIKE %s OR
+                LOWER(equipment) LIKE %s OR
                 LOWER(location) LIKE %s
             )'''
             search_param = f'%{search_term}%'
             params.extend([search_param] * 5)
-        
+
         query += ' ORDER BY part_number'
-        
+
         cursor = self.conn.cursor()
         cursor.execute(query, params)
-        
+
         for row in cursor.fetchall():
-            # Determine status color
-            qty = float(row[7])
-            min_stock = float(row[9])
-            status = '⚠️ LOW' if qty < min_stock else row[20]
-            
+            # Access columns by index based on explicit SELECT order above
+            qty = float(row[7])    # quantity_in_stock
+            min_stock = float(row[9])  # minimum_stock
+            status = '⚠️ LOW' if qty < min_stock else row[22]  # status
+
             self.mro_tree.insert('', 'end', values=(
-                row[2],   # Part Number
-                row[1],   # Name
-                row[3],   # Model
-                row[4],   # Equipment
-                row[5],   # System
-                f"{qty:.1f}",  # Qty
-                f"{min_stock:.1f}",  # Min Stock
-                row[6],   # Unit
-                f"${float(row[8]):.2f}",  # Price
-                row[11],  # Location
-                status    # Status
+                row[2],   # part_number
+                row[1],   # name
+                row[3],   # model_number
+                row[4],   # equipment
+                row[5],   # engineering_system
+                f"{qty:.1f}",  # quantity_in_stock
+                f"{min_stock:.1f}",  # minimum_stock
+                row[6],   # unit_of_measure
+                f"${float(row[8]):.2f}",  # unit_price
+                row[11],  # location
+                status    # status
             ), tags=('low_stock',) if qty < min_stock else ())
         
         # Color low stock items
