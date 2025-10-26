@@ -2612,19 +2612,23 @@ class AITCMMSSystem:
             backup_files = backup_files[:15]
         
             # Add to tree
-            for backup in backup_files:
+            for idx, backup in enumerate(backup_files):
                 # Format file size
                 size_mb = backup['size'] / (1024 * 1024)
                 size_str = f"{size_mb:.1f} MB" if size_mb >= 1 else f"{backup['size']} bytes"
-            
+
                 item_id = self.backup_files_tree.insert('', 'end', values=(
                     backup['filename'],
                     backup['modified'].strftime('%Y-%m-%d %H:%M:%S'),
                     size_str,
                     f"{backup['age_days']} days"
                 ))
-            
+
                 print(f"DEBUG: Inserted item: {backup['filename']}")
+
+                # Yield to event loop periodically to keep UI responsive
+                if idx % 5 == 0:
+                    self.root.update_idletasks()
         
             # Update info label
             if hasattr(self, 'backup_info_label'):
@@ -4552,16 +4556,15 @@ class AITCMMSSystem:
     
         # Create GUI based on user role
         self.create_gui()
-    
-        # Load initial data
-        self.load_equipment_data()
-        self.check_empty_database_and_offer_restore()
-    
-        # Add this near the end of __init__, after self.load_equipment_data()
+
+
+        # Add database restore button before loading data
         if self.current_user_role == 'Manager':
-            self.add_database_restore_button()  
-        if self.current_user_role == 'Manager':
-            self.update_equipment_statistics()
+            self.add_database_restore_button()
+
+        # Defer initial data loading to keep UI responsive at startup
+        # This prevents the app from freezing during initialization
+        self.root.after(100, self._deferred_startup_tasks)
     
         print(f"CHECK: AIT Complete CMMS System initialized successfully for {self.user_name} ({self.current_user_role})")
 
@@ -4574,7 +4577,38 @@ class AITCMMSSystem:
         self.setup_program_colors()
         print(f"AIT Complete CMMS System initialized successfully for {self.user_name} ({self.current_user_role})")
 
-    
+    def _deferred_startup_tasks(self):
+        """Load data after UI is displayed to keep startup responsive"""
+        try:
+            # Show loading message in status bar
+            if hasattr(self, 'update_status'):
+                self.update_status("Loading equipment data...")
+
+            # Load equipment data
+            self.load_equipment_data()
+
+            # Update status
+            if hasattr(self, 'update_status'):
+                self.update_status("Checking database status...")
+
+            # Check if database needs restore
+            self.check_empty_database_and_offer_restore()
+
+            # Update statistics for managers
+            if self.current_user_role == 'Manager':
+                if hasattr(self, 'update_status'):
+                    self.update_status("Updating statistics...")
+                self.update_equipment_statistics()
+
+            # Final status update
+            if hasattr(self, 'update_status'):
+                self.update_status("Ready")
+
+        except Exception as e:
+            print(f"Error in deferred startup tasks: {e}")
+            import traceback
+            traceback.print_exc()
+
     def close_cm_dialog(self):
         """Close selected CM with parts consumption tracking"""
         selected = self.cm_tree.selection()
@@ -6656,27 +6690,20 @@ class AITCMMSSystem:
         """Update equipment statistics display"""
         try:
             cursor = self.conn.cursor()
-        
-            # Get total equipment count
-            cursor.execute('SELECT COUNT(*) FROM equipment')
-            total_assets = cursor.fetchone()[0]
-        
-            # Get active equipment count
-            cursor.execute("SELECT COUNT(*) FROM equipment WHERE status = 'Active' OR status IS NULL")
-            active_assets = cursor.fetchone()[0]
-        
-            # Get Cannot Find count (current missing assets)
-            cursor.execute("SELECT COUNT(DISTINCT bfm_equipment_no) FROM cannot_find_assets WHERE status = 'Missing'")
-            cannot_find_count = cursor.fetchone()[0]
-        
-            # Get Run to Failure count
-            cursor.execute("SELECT COUNT(*) FROM equipment WHERE status = 'Run to Failure'")
-            rtf_count = cursor.fetchone()[0]
-        
-            # Also check run_to_failure_assets table for additional count
-            cursor.execute("SELECT COUNT(DISTINCT bfm_equipment_no) FROM run_to_failure_assets")
-            rtf_assets_count = cursor.fetchone()[0]
-        
+
+            # Combine all statistics queries into one for better performance
+            cursor.execute('''
+                SELECT
+                    (SELECT COUNT(*) FROM equipment) as total_assets,
+                    (SELECT COUNT(*) FROM equipment WHERE status = 'Active' OR status IS NULL) as active_assets,
+                    (SELECT COUNT(DISTINCT bfm_equipment_no) FROM cannot_find_assets WHERE status = 'Missing') as cannot_find_count,
+                    (SELECT COUNT(*) FROM equipment WHERE status = 'Run to Failure') as rtf_count,
+                    (SELECT COUNT(DISTINCT bfm_equipment_no) FROM run_to_failure_assets) as rtf_assets_count
+            ''')
+
+            result = cursor.fetchone()
+            total_assets, active_assets, cannot_find_count, rtf_count, rtf_assets_count = result
+
             # Use the higher count for RTF
             rtf_total = max(rtf_count, rtf_assets_count)
         
@@ -8300,18 +8327,22 @@ class AITCMMSSystem:
                 self.cm_tree.delete(item)
         
             # Add CM records
-            for cm in cursor.fetchall():
+            for idx, cm in enumerate(cursor.fetchall()):
                 cm_number, bfm_no, description, priority, assigned, status, created, notes = cm
-            
+
                 # Determine source
                 source = "SharePoint" if notes and "Imported from SharePoint" in notes else "Manual"
-            
+
                 # Truncate description for display
                 display_desc = (description[:47] + '...') if description and len(description) > 50 else (description or '')
-            
+
                 self.cm_tree.insert('', 'end', values=(
                     cm_number, bfm_no, display_desc, priority, assigned, status, created, source
                 ))
+
+                # Yield to event loop every 50 items to keep UI responsive
+                if idx % 50 == 0:
+                    self.root.update_idletasks()
             
         except Exception as e:
             print(f"Error loading corrective maintenance: {e}")
@@ -9126,18 +9157,18 @@ class AITCMMSSystem:
         # Clear existing items
         for item in self.cannot_find_tree.get_children():
             self.cannot_find_tree.delete(item)
-    
+
         # Get search term
         search_term = self.cannot_find_search_var.get().lower().strip()
-    
+
         # If no data loaded yet, return
         if not hasattr(self, 'cannot_find_data'):
             return
-    
+
         # Filter and display data
-        for asset in self.cannot_find_data:
+        for idx, asset in enumerate(self.cannot_find_data):
             bfm_no, description, location, technician, reported_date, status = asset
-        
+
             # If search term is empty, show all
             if not search_term:
                 self.cannot_find_tree.insert('', 'end', values=(
@@ -9153,11 +9184,15 @@ class AITCMMSSystem:
                     str(reported_date or ''),
                     str(status or '')
                 ]).lower()
-            
+
                 if search_term in searchable_text:
                     self.cannot_find_tree.insert('', 'end', values=(
                         bfm_no, description or '', location or '', technician, reported_date, status
                     ))
+
+            # Yield to event loop every 50 items to keep UI responsive
+            if idx % 50 == 0:
+                self.root.update_idletasks()
     
         # Update count in status bar if method exists
         visible_count = len(self.cannot_find_tree.get_children())
@@ -9710,14 +9745,18 @@ class AITCMMSSystem:
             print("DEBUG: Cleared existing tree items")
         
             # Add recent completions
-            for completion in completions:
+            for idx, completion in enumerate(completions):
                 completion_date, bfm_no, pm_type, technician, total_hours = completion
                 hours_display = f"{total_hours:.1f}h" if total_hours else "0.0h"
-            
+
                 self.recent_completions_tree.insert('', 'end', values=(
                     completion_date, bfm_no, pm_type, technician, hours_display
                 ))
                 print(f"DEBUG: Added {bfm_no} - {pm_type} - {technician}")
+
+                # Yield to event loop every 50 items to keep UI responsive
+                if idx % 50 == 0:
+                    self.root.update_idletasks()
         
             print("DEBUG: Successfully loaded recent completions")
             print(f"Refreshed: {len(completions)} recent completions loaded")
@@ -13455,12 +13494,12 @@ class AITCMMSSystem:
     def refresh_technician_schedules(self):
         """Refresh all technician schedule displays"""
         week_start = self.week_start_var.get()
-        
+
         for technician, tree in self.technician_trees.items():
             # Clear existing items
             for item in tree.get_children():
                 tree.delete(item)
-            
+
             # Load scheduled PMs for this technician
             cursor = self.conn.cursor()
             cursor.execute('''
@@ -13470,12 +13509,19 @@ class AITCMMSSystem:
                 WHERE ws.assigned_technician = %s AND ws.week_start_date = %s
                 ORDER BY ws.scheduled_date
             ''', (technician, week_start))
-            
+
             assignments = cursor.fetchall()
-            
-            for assignment in assignments:
+
+            for idx, assignment in enumerate(assignments):
                 bfm_no, description, pm_type, scheduled_date, status = assignment
                 tree.insert('', 'end', values=(bfm_no, description, pm_type, scheduled_date, status))
+
+                # Yield to event loop every 20 items to keep UI responsive
+                if idx % 20 == 0:
+                    self.root.update_idletasks()
+
+            # Yield to event loop after each technician
+            self.root.update_idletasks()
     
     def print_weekly_pm_forms(self):
         """Generate and print PM forms for the week"""
