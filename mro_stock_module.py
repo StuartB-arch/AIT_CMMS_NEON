@@ -1331,7 +1331,7 @@ class MROStockManager:
                 FROM cm_parts_used cp
                 JOIN mro_inventory mi ON cp.part_number = mi.part_number
                 WHERE cp.recorded_date::timestamp >= CURRENT_DATE - INTERVAL '90 days'
-                GROUP BY mi.part_number
+                GROUP BY mi.part_number, mi.name
                 ORDER BY total_cost DESC
                 LIMIT 50
             ''')
