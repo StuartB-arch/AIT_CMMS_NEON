@@ -8742,7 +8742,8 @@ class AITCMMSSystem:
                         if hasattr(self, 'refresh_technician_schedules'):
                             self.refresh_technician_schedules()
                         self.update_status(f"CHECK: PM completed and verified: {bfm_no} - {pm_type} by {technician}")
-                        self.auto_sync_after_action()
+                        if hasattr(self, 'auto_sync_after_action'):
+                            self.auto_sync_after_action()
                     else:
                         messagebox.showerror("WARNING: Warning", 
                                         f"PM was saved but verification failed!\n\n"
