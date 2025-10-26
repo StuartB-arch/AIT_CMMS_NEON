@@ -714,29 +714,36 @@ class MROStockManager:
         row += 1
         
         # Pictures
-        ttk.Label(scrollable_frame, text="PICTURES", 
-                 font=('Arial', 11, 'bold')).grid(row=row, column=0, columnspan=2, 
+        ttk.Label(scrollable_frame, text="PICTURES",
+                 font=('Arial', 11, 'bold')).grid(row=row, column=0, columnspan=2,
                                                   sticky='w', padx=10, pady=10)
         row += 1
-        
-        fields['picture_1'] = tk.StringVar(value=part_dict.get('picture_1_path') or '')
-        fields['picture_2'] = tk.StringVar(value=part_dict.get('picture_2_path') or '')
-        
-        ttk.Label(scrollable_frame, text="Picture 1:").grid(row=row, column=0, 
+
+        # Initialize photo fields - start empty to indicate "no change"
+        fields['picture_1'] = tk.StringVar(value='')
+        fields['picture_2'] = tk.StringVar(value='')
+
+        # Show current photo status
+        pic1_status = "📷 Photo stored in database" if part_dict.get('picture_1_data') else "No photo"
+        ttk.Label(scrollable_frame, text="Picture 1:").grid(row=row, column=0,
                                                             sticky='w', padx=10, pady=5)
         pic1_frame = ttk.Frame(scrollable_frame)
         pic1_frame.grid(row=row, column=1, sticky='w', padx=10, pady=5)
-        ttk.Entry(pic1_frame, textvariable=fields['picture_1'], width=35).pack(side='left')
-        ttk.Button(pic1_frame, text="Browse", 
+        ttk.Label(pic1_frame, text=pic1_status, foreground='green' if part_dict.get('picture_1_data') else 'gray').pack(side='left', padx=5)
+        ttk.Entry(pic1_frame, textvariable=fields['picture_1'], width=25).pack(side='left')
+        ttk.Button(pic1_frame, text="Browse New",
                   command=lambda: self.browse_image(fields['picture_1'])).pack(side='left', padx=5)
         row += 1
-        
-        ttk.Label(scrollable_frame, text="Picture 2:").grid(row=row, column=0, 
+
+        # Show current photo status
+        pic2_status = "📷 Photo stored in database" if part_dict.get('picture_2_data') else "No photo"
+        ttk.Label(scrollable_frame, text="Picture 2:").grid(row=row, column=0,
                                                             sticky='w', padx=10, pady=5)
         pic2_frame = ttk.Frame(scrollable_frame)
         pic2_frame.grid(row=row, column=1, sticky='w', padx=10, pady=5)
-        ttk.Entry(pic2_frame, textvariable=fields['picture_2'], width=35).pack(side='left')
-        ttk.Button(pic2_frame, text="Browse", 
+        ttk.Label(pic2_frame, text=pic2_status, foreground='green' if part_dict.get('picture_2_data') else 'gray').pack(side='left', padx=5)
+        ttk.Entry(pic2_frame, textvariable=fields['picture_2'], width=25).pack(side='left')
+        ttk.Button(pic2_frame, text="Browse New",
                   command=lambda: self.browse_image(fields['picture_2'])).pack(side='left', padx=5)
         row += 1
         
@@ -758,18 +765,35 @@ class MROStockManager:
                 pic1_path = fields['picture_1'].get()
                 pic2_path = fields['picture_2'].get()
 
-                pic1_data = None
-                pic2_data = None
+                # Get existing photo data and paths from database first
+                cursor = self.conn.cursor()
+                cursor.execute('SELECT picture_1_path, picture_2_path, picture_1_data, picture_2_data FROM mro_inventory WHERE part_number = %s', (part_number,))
+                existing_data = cursor.fetchone()
+                existing_pic1_path = existing_data[0] if existing_data else None
+                existing_pic2_path = existing_data[1] if existing_data else None
+                existing_pic1_data = existing_data[2] if existing_data else None
+                existing_pic2_data = existing_data[3] if existing_data else None
 
+                # Only read new photo data if a NEW file is selected
+                # Default to existing data and paths
+                final_pic1_path = existing_pic1_path
+                final_pic2_path = existing_pic2_path
+                pic1_data = existing_pic1_data
+                pic2_data = existing_pic2_data
+
+                # Check if user selected a new file for picture 1
                 if pic1_path and os.path.exists(pic1_path):
+                    # User browsed and selected a new file
                     with open(pic1_path, 'rb') as f:
                         pic1_data = f.read()
+                    final_pic1_path = pic1_path
 
+                # Check if user selected a new file for picture 2
                 if pic2_path and os.path.exists(pic2_path):
+                    # User browsed and selected a new file
                     with open(pic2_path, 'rb') as f:
                         pic2_data = f.read()
-
-                cursor = self.conn.cursor()
+                    final_pic2_path = pic2_path
 
                 notes_text = fields['notes'].get('1.0', 'end-1c')
 
@@ -796,8 +820,8 @@ class MROStockManager:
                     fields['rack'].get(),
                     fields['row'].get(),
                     fields['bin'].get(),
-                    pic1_path,
-                    pic2_path,
+                    final_pic1_path,
+                    final_pic2_path,
                     pic1_data,
                     pic2_data,
                     notes_text,
