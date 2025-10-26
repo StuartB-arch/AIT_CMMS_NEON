@@ -433,41 +433,71 @@ class PMSchedulingService:
     
     def generate_weekly_schedule(self, week_start_str: str, weekly_pm_target: int) -> Dict:
         """Generate weekly PM schedule with comprehensive validation"""
-        
+
         try:
+            # Validate technicians list
+            if not self.technicians or len(self.technicians) == 0:
+                return {
+                    'success': False,
+                    'error': 'No technicians available for assignment. Please ensure technicians are configured in the system.'
+                }
+
             week_start = datetime.strptime(week_start_str, '%Y-%m-%d')
             cursor = self.conn.cursor()
-            
+
             print(f"DEBUG: NEW SYSTEM - Generating assignments for week {week_start_str}")
-            
+            print(f"DEBUG: Available technicians: {len(self.technicians)}")
+
             # Clear existing assignments for this week
             cursor.execute(
-                'DELETE FROM weekly_pm_schedules WHERE week_start_date = %s', 
+                'DELETE FROM weekly_pm_schedules WHERE week_start_date = %s',
                 (week_start_str,)
             )
-            
+
             # Get equipment list
             equipment_list = self._get_active_equipment()
             print(f"DEBUG: Found {len(equipment_list)} active equipment items")
-            
+
+            # Check if there's any equipment to schedule
+            if not equipment_list or len(equipment_list) == 0:
+                self.conn.commit()
+                return {
+                    'success': True,
+                    'total_assignments': 0,
+                    'unique_assets': 0,
+                    'assignments': [],
+                    'message': 'No active equipment found for scheduling.'
+                }
+
             # Generate assignments
             assignments = self.assignment_generator.generate_assignments(
                 equipment_list, week_start, weekly_pm_target
             )
             print(f"DEBUG: Generated {len(assignments)} potential assignments")
-            
+
+            # Check if assignments were generated
+            if not assignments or len(assignments) == 0:
+                self.conn.commit()
+                return {
+                    'success': True,
+                    'total_assignments': 0,
+                    'unique_assets': 0,
+                    'assignments': [],
+                    'message': 'No PM assignments needed for this week.'
+                }
+
             # Assign to technicians and save
             scheduled_assignments = self._assign_and_save(assignments, week_start, week_start_str)
-            
+
             self.conn.commit()
-            
+
             return {
                 'success': True,
                 'total_assignments': len(scheduled_assignments),
                 'unique_assets': len(set(a['bfm_no'] for a in scheduled_assignments)),
                 'assignments': scheduled_assignments
             }
-            
+
         except Exception as e:
             self.conn.rollback()
             import traceback
@@ -510,7 +540,16 @@ class PMSchedulingService:
         """Assign to technicians and save to database"""
         cursor = self.conn.cursor()
         scheduled_assignments = []
-        
+
+        # Defensive check - should never happen due to validation in generate_weekly_schedule
+        if not self.technicians or len(self.technicians) == 0:
+            print("ERROR: No technicians available for assignment")
+            return scheduled_assignments
+
+        if not assignments or len(assignments) == 0:
+            print("INFO: No assignments to schedule")
+            return scheduled_assignments
+
         for i, assignment in enumerate(assignments):
             # Distribute among technicians
             tech_index = i % len(self.technicians)
@@ -13281,29 +13320,46 @@ class AITCMMSSystem:
         NEW SOLID PM assignment generation - prevents duplicates
         """
         try:
+            # Validate that technicians are configured
+            if not hasattr(self, 'technicians') or not self.technicians or len(self.technicians) == 0:
+                messagebox.showerror(
+                    "Configuration Error",
+                    "No technicians configured in the system.\n\n"
+                    "Please contact your system administrator."
+                )
+                return
+
             # Create the new PM scheduling service
             pm_service = PMSchedulingService(self.conn, self.technicians)
-        
+
             # Get the week start date
             week_start = self.week_start_var.get()
-        
+
             # Generate the schedule
             result = pm_service.generate_weekly_schedule(week_start, self.weekly_pm_target)
-        
+
             if result['success']:
-                messagebox.showinfo(
-                    "NEW SYSTEM - Scheduling Complete", 
-                    f"Generated {result['total_assignments']} PM assignments for week {week_start}\n\n"
-                    f"Unique assets: {result['unique_assets']}\n\n"
-                    f"This new system prevents duplicate assignments!"
-                )
-            
+                # Check if there's a special message (like no equipment or no assignments)
+                if 'message' in result and result['total_assignments'] == 0:
+                    messagebox.showinfo(
+                        "Scheduling Complete",
+                        f"{result['message']}\n\n"
+                        f"Week: {week_start}"
+                    )
+                else:
+                    messagebox.showinfo(
+                        "NEW SYSTEM - Scheduling Complete",
+                        f"Generated {result['total_assignments']} PM assignments for week {week_start}\n\n"
+                        f"Unique assets: {result['unique_assets']}\n\n"
+                        f"This new system prevents duplicate assignments!"
+                    )
+
                 # Refresh displays
                 self.refresh_technician_schedules()
                 self.update_status(f"NEW SYSTEM: Generated {result['total_assignments']} PM assignments")
             else:
                 messagebox.showerror("NEW SYSTEM Error", f"Failed to generate assignments: {result['error']}")
-        
+
         except Exception as e:
             messagebox.showerror("NEW SYSTEM Error", f"Failed to generate assignments: {str(e)}")
             import traceback
