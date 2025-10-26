@@ -230,6 +230,22 @@ class UserManager:
         if not user:
             return None
 
+        # Convert to dict if it's a tuple or list (defensive coding)
+        # This handles cases where RealDictCursor might not be working as expected
+        if isinstance(user, (tuple, list)):
+            user = {
+                'id': user[0],
+                'username': user[1],
+                'full_name': user[2],
+                'role': user[3],
+                'password_hash': user[4],
+                'is_active': user[5]
+            }
+
+        # Convert to regular dict if it's a DictRow object
+        elif not isinstance(user, dict):
+            user = dict(user)
+
         if not user['is_active']:
             return None
 
