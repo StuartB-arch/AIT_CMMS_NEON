@@ -497,9 +497,9 @@ class MROStockManager:
         if not selected:
             messagebox.showwarning("Warning", "Please select a part to edit")
             return
-        
+
         item = self.mro_tree.item(selected[0])
-        part_number = item['values'][0]
+        part_number = str(item['values'][0])  # Convert to string to avoid type mismatch
 
         try:
             # Get full part data
@@ -729,9 +729,9 @@ class MROStockManager:
         if not selected:
             messagebox.showwarning("Warning", "Please select a part to delete")
             return
-        
+
         item = self.mro_tree.item(selected[0])
-        part_number = item['values'][0]
+        part_number = str(item['values'][0])  # Convert to string to avoid type mismatch
         part_name = item['values'][1]
         
         result = messagebox.askyesno("Confirm Delete", 
@@ -757,9 +757,9 @@ class MROStockManager:
         if not selected:
             messagebox.showwarning("Warning", "Please select a part to view")
             return
-    
+
         item = self.mro_tree.item(selected[0])
-        part_number = item['values'][0]
+        part_number = str(item['values'][0])  # Convert to string to avoid type mismatch
 
         try:
             # Get full part data
