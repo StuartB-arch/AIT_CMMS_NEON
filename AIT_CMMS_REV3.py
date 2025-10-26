@@ -6705,26 +6705,26 @@ class AITCMMSSystem:
         for tech in self.technicians:
             tech_frame = ttk.Frame(self.technician_notebook)
             self.technician_notebook.add(tech_frame, text=tech)
-            
+
             # Technician's schedule tree
             tech_tree = ttk.Treeview(tech_frame,
                                    columns=('BFM', 'Description', 'PM Type', 'Due Date', 'Status'),
                                    show='headings')
-            
+
             tech_tree.heading('BFM', text='BFM Equipment No.')
             tech_tree.heading('Description', text='Description')
             tech_tree.heading('PM Type', text='PM Type')
             tech_tree.heading('Due Date', text='Due Date')
             tech_tree.heading('Status', text='Status')
-            
+
             for col in ('BFM', 'Description', 'PM Type', 'Due Date', 'Status'):
                 tech_tree.column(col, width=150)
-            
+
             tech_tree.pack(fill='both', expand=True, padx=5, pady=5)
             self.technician_trees[tech] = tech_tree
-            
-            # After creating all the technician trees, add this line:
-            self.load_latest_weekly_schedule()
+
+        # After creating all the technician trees, load the latest schedule
+        self.load_latest_weekly_schedule()
      
     
     def create_pm_completion_tab(self):
