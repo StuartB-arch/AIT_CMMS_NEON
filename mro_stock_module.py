@@ -137,7 +137,38 @@ class MROStockManager:
                 status TEXT DEFAULT 'Active'
             )
         ''')
-        
+
+        # Migrate existing tables to add new columns if they don't exist
+        try:
+            # Check if picture_1_data column exists
+            cursor.execute("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name='mro_inventory' AND column_name='picture_1_data'
+            """)
+            if not cursor.fetchone():
+                cursor.execute('ALTER TABLE mro_inventory ADD COLUMN picture_1_data BYTEA')
+                self.conn.commit()
+                print("Added picture_1_data column to mro_inventory table")
+        except Exception as e:
+            self.conn.rollback()
+            print(f"Note: Could not add picture_1_data column: {e}")
+
+        try:
+            # Check if picture_2_data column exists
+            cursor.execute("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name='mro_inventory' AND column_name='picture_2_data'
+            """)
+            if not cursor.fetchone():
+                cursor.execute('ALTER TABLE mro_inventory ADD COLUMN picture_2_data BYTEA')
+                self.conn.commit()
+                print("Added picture_2_data column to mro_inventory table")
+        except Exception as e:
+            self.conn.rollback()
+            print(f"Note: Could not add picture_2_data column: {e}")
+
         # Create index for faster searches
         cursor.execute('''
             CREATE INDEX IF NOT EXISTS idx_mro_part_number 
