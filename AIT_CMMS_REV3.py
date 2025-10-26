@@ -458,27 +458,60 @@ class PMSchedulingService:
             ('PM_LIST_A220_3.csv', 3),  # P3 assets
         ]
 
-        for filename, priority in priority_files:
-            filepath = os.path.join(os.path.dirname(__file__), filename)
-            if os.path.exists(filepath):
+        try:
+            # Get the directory where the script is located
+            # Use os.getcwd() as fallback if __file__ is not available
+            try:
+                script_dir = os.path.dirname(os.path.abspath(__file__))
+            except NameError:
+                script_dir = os.getcwd()
+
+            for filename, priority in priority_files:
+                filepath = os.path.join(script_dir, filename)
+
+                if not os.path.exists(filepath):
+                    print(f"Info: Priority file {filename} not found at {filepath}")
+                    continue
+
                 try:
                     # Read CSV file
                     df = pd.read_csv(filepath, encoding='utf-8-sig')
 
                     # Check if BFM column exists
-                    if 'BFM' in df.columns:
-                        # Map each BFM number to its priority
-                        for bfm in df['BFM'].dropna().unique():
-                            bfm_str = str(int(bfm)) if pd.notna(bfm) else None
-                            if bfm_str:
-                                priority_map[bfm_str] = priority
-                        print(f"Loaded {len(df['BFM'].dropna().unique())} priority {priority} assets from {filename}")
-                    else:
+                    if 'BFM' not in df.columns:
                         print(f"Warning: BFM column not found in {filename}")
+                        continue
+
+                    # Map each BFM number to its priority
+                    for bfm in df['BFM'].dropna().unique():
+                        try:
+                            if pd.notna(bfm):
+                                # Handle both string and numeric BFM values
+                                if isinstance(bfm, str):
+                                    bfm_str = bfm.strip()
+                                elif isinstance(bfm, (int, float)):
+                                    bfm_str = str(int(float(bfm)))
+                                else:
+                                    bfm_str = str(bfm)
+
+                                if bfm_str:
+                                    priority_map[bfm_str] = priority
+                        except (ValueError, TypeError) as e:
+                            print(f"Warning: Could not convert BFM value '{bfm}' in {filename}: {e}")
+                            continue
+
+                    print(f"Loaded {len([b for b in df['BFM'].dropna() if pd.notna(b)])} priority {priority} assets from {filename}")
+
+                except pd.errors.EmptyDataError:
+                    print(f"Warning: {filename} is empty")
+                except pd.errors.ParserError as e:
+                    print(f"Warning: Could not parse {filename}: {e}")
                 except Exception as e:
-                    print(f"Error loading {filename}: {str(e)}")
-            else:
-                print(f"Warning: Priority file {filename} not found at {filepath}")
+                    print(f"Warning: Error loading {filename}: {str(e)}")
+
+        except Exception as e:
+            print(f"Warning: Error in priority asset loading system: {str(e)}")
+            print("Continuing with empty priority map - all assets will have default priority")
 
         print(f"Total priority assets loaded: {len(priority_map)}")
         return priority_map
