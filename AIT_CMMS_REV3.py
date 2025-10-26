@@ -107,12 +107,19 @@ class DateParser:
 
 class CompletionRecordRepository:
     """Responsible for retrieving completion records from database"""
-    
+
     def __init__(self, conn):
         self.conn = conn
-    
+        self._completion_cache = None  # Cache for bulk loaded completions
+        self._scheduled_cache = None   # Cache for scheduled PMs
+
     def get_recent_completions(self, bfm_no: str, days: int = 400) -> List[CompletionRecord]:
         """Get recent completion records for equipment - EXTENDED TO 400 DAYS FOR ANNUAL PMs"""
+        # Use cache if available
+        if self._completion_cache is not None:
+            return self._completion_cache.get(bfm_no, [])
+
+        # Fallback to individual query if cache not loaded
         cursor = self.conn.cursor()
         cursor.execute('''
             SELECT bfm_equipment_no, pm_type, completion_date, technician_name
@@ -121,13 +128,13 @@ class CompletionRecordRepository:
             AND completion_date::DATE >= CURRENT_DATE - INTERVAL '%s days'
             ORDER BY completion_date DESC
         ''', (bfm_no, days))
-    
+
         completions = []
         for row in cursor.fetchall():
             try:
                 pm_type = PMType.MONTHLY if row[1] == "Monthly" else PMType.ANNUAL
                 completion_date = datetime.strptime(row[2], '%Y-%m-%d')
-            
+
                 completions.append(CompletionRecord(
                     bfm_no=row[0],
                     pm_type=pm_type,
@@ -136,40 +143,110 @@ class CompletionRecordRepository:
                 ))
             except Exception as e:
                 print(f"Error parsing completion record: {e}")
-    
+
         return completions
-    
+
+    def bulk_load_completions(self, days: int = 400) -> None:
+        """Load ALL completion records for ALL equipment in one query - MASSIVE PERFORMANCE BOOST"""
+        print(f"DEBUG: Bulk loading completion records...")
+        cursor = self.conn.cursor()
+        cursor.execute('''
+            SELECT bfm_equipment_no, pm_type, completion_date, technician_name
+            FROM pm_completions
+            WHERE completion_date::DATE >= CURRENT_DATE - INTERVAL '%s days'
+            ORDER BY bfm_equipment_no, completion_date DESC
+        ''', (days,))
+
+        # Group completions by equipment
+        self._completion_cache = {}
+        for row in cursor.fetchall():
+            try:
+                bfm_no = row[0]
+                pm_type = PMType.MONTHLY if row[1] == "Monthly" else PMType.ANNUAL
+                completion_date = datetime.strptime(row[2], '%Y-%m-%d')
+
+                if bfm_no not in self._completion_cache:
+                    self._completion_cache[bfm_no] = []
+
+                self._completion_cache[bfm_no].append(CompletionRecord(
+                    bfm_no=bfm_no,
+                    pm_type=pm_type,
+                    completion_date=completion_date,
+                    technician=row[3]
+                ))
+            except Exception as e:
+                print(f"Error parsing completion record: {e}")
+
+        print(f"DEBUG: Loaded completion records for {len(self._completion_cache)} equipment items")
+
     def get_scheduled_pms(self, week_start: datetime, bfm_no: Optional[str] = None) -> List[Dict]:
         """Get currently scheduled PMs for the week"""
+        # Use cache if available and no specific equipment requested
+        if self._scheduled_cache is not None and bfm_no:
+            return self._scheduled_cache.get(bfm_no, [])
+
+        # Fallback to individual query
         cursor = self.conn.cursor()
-        
+
         if bfm_no:
             cursor.execute('''
                 SELECT bfm_equipment_no, pm_type, assigned_technician, status
-                FROM weekly_pm_schedules 
+                FROM weekly_pm_schedules
                 WHERE week_start_date = %s AND bfm_equipment_no = %s
             ''', (week_start.strftime('%Y-%m-%d'), bfm_no))
         else:
             cursor.execute('''
                 SELECT bfm_equipment_no, pm_type, assigned_technician, status
-                FROM weekly_pm_schedules 
+                FROM weekly_pm_schedules
                 WHERE week_start_date = %s
             ''', (week_start.strftime('%Y-%m-%d'),))
-            
-        return [{'bfm_no': row[0], 'pm_type': row[1], 'technician': row[2], 'status': row[3]} 
+
+        return [{'bfm_no': row[0], 'pm_type': row[1], 'technician': row[2], 'status': row[3]}
                 for row in cursor.fetchall()]
+
+    def bulk_load_scheduled(self, week_start: datetime) -> None:
+        """Load ALL scheduled PMs for the week in one query"""
+        print(f"DEBUG: Bulk loading scheduled PMs...")
+        cursor = self.conn.cursor()
+        cursor.execute('''
+            SELECT bfm_equipment_no, pm_type, assigned_technician, status
+            FROM weekly_pm_schedules
+            WHERE week_start_date = %s
+        ''', (week_start.strftime('%Y-%m-%d'),))
+
+        # Group scheduled PMs by equipment
+        self._scheduled_cache = {}
+        for row in cursor.fetchall():
+            bfm_no = row[0]
+            if bfm_no not in self._scheduled_cache:
+                self._scheduled_cache[bfm_no] = []
+
+            self._scheduled_cache[bfm_no].append({
+                'bfm_no': bfm_no,
+                'pm_type': row[1],
+                'technician': row[2],
+                'status': row[3]
+            })
+
+        print(f"DEBUG: Loaded scheduled PMs for {len(self._scheduled_cache)} equipment items")
+
+    def clear_cache(self):
+        """Clear the caches"""
+        self._completion_cache = None
+        self._scheduled_cache = None
 
 class PMEligibilityChecker:
     """Responsible for determining if a PM is eligible for scheduling"""
-    
+
     PM_FREQUENCIES = {
         PMType.MONTHLY: 30,
         PMType.ANNUAL: 365
     }
-    
+
     def __init__(self, date_parser: DateParser, completion_repo: CompletionRecordRepository):
         self.date_parser = date_parser
         self.completion_repo = completion_repo
+        self._next_annual_cache = None  # Cache for next annual PM dates
     
     def check_eligibility(self, equipment: Equipment, pm_type: PMType, 
                          week_start: datetime) -> PMEligibilityResult:
@@ -184,15 +261,20 @@ class PMEligibilityChecker:
         
         # WARNING: NEW: For Annual PMs, check if there's a Next Annual PM Date specified
         if pm_type == PMType.ANNUAL:
-            cursor = self.completion_repo.conn.cursor()
-            cursor.execute('SELECT next_annual_pm FROM equipment WHERE bfm_equipment_no = %s', (equipment.bfm_no,))
-            result = cursor.fetchone()
-        
-            if result and result[0]:
-                next_annual_date = self.date_parser.parse_flexible(result[0])
+            # Use cache if available, otherwise query database
+            if self._next_annual_cache is not None:
+                next_annual_str = self._next_annual_cache.get(equipment.bfm_no)
+            else:
+                cursor = self.completion_repo.conn.cursor()
+                cursor.execute('SELECT next_annual_pm FROM equipment WHERE bfm_equipment_no = %s', (equipment.bfm_no,))
+                result = cursor.fetchone()
+                next_annual_str = result[0] if result and result[0] else None
+
+            if next_annual_str:
+                next_annual_date = self.date_parser.parse_flexible(next_annual_str)
                 if next_annual_date:
                     days_until_next_annual = (next_annual_date - datetime.now()).days
-                
+
                     # If Next Annual PM Date is in the future and more than 7 days away, not due yet
                     if days_until_next_annual > 7:
                         return PMEligibilityResult(
@@ -363,6 +445,30 @@ class PMEligibilityChecker:
                 f"{pm_type.value} PM not due for {days_until_due} days (last: {last_completion_date.strftime('%Y-%m-%d')}, source: {source})"
             )
 
+    def bulk_load_next_annual(self) -> None:
+        """Load ALL next_annual_pm dates for ALL equipment in one query - PERFORMANCE BOOST"""
+        print(f"DEBUG: Bulk loading next annual PM dates...")
+        cursor = self.completion_repo.conn.cursor()
+        cursor.execute('''
+            SELECT bfm_equipment_no, next_annual_pm
+            FROM equipment
+            WHERE next_annual_pm IS NOT NULL AND next_annual_pm != ''
+        ''')
+
+        # Store next annual dates by equipment
+        self._next_annual_cache = {}
+        for row in cursor.fetchall():
+            bfm_no = row[0]
+            next_annual_pm = row[1]
+            if next_annual_pm:
+                self._next_annual_cache[bfm_no] = next_annual_pm
+
+        print(f"DEBUG: Loaded next annual PM dates for {len(self._next_annual_cache)} equipment items")
+
+    def clear_cache(self):
+        """Clear the cache"""
+        self._next_annual_cache = None
+
 class PMAssignmentGenerator:
     """Responsible for generating PM assignments"""
 
@@ -381,8 +487,9 @@ class PMAssignmentGenerator:
         print(f"DEBUG: Processing {total_equipment} equipment items...")
 
         for idx, equipment in enumerate(equipment_list):
-            # Yield to event loop every 50 items to prevent UI freeze
-            if idx > 0 and idx % 50 == 0:
+            # Yield to event loop every 200 items to prevent UI freeze
+            # (Increased from 50 due to cached data optimization - processing is now much faster)
+            if idx > 0 and idx % 200 == 0:
                 print(f"DEBUG: Progress: {idx}/{total_equipment} equipment processed ({idx*100//total_equipment}%)")
                 if self.root:
                     self.root.update_idletasks()  # Yield to tkinter event loop
@@ -569,6 +676,14 @@ class PMSchedulingService:
                     'message': 'No active equipment found for scheduling.'
                 }
 
+            # PERFORMANCE OPTIMIZATION: Bulk load all data to avoid N+1 query problem
+            # This reduces thousands of individual queries to just 3 bulk queries
+            print(f"DEBUG: OPTIMIZATION - Pre-loading all data to avoid slow individual queries...")
+            self.completion_repo.bulk_load_completions(days=400)
+            self.completion_repo.bulk_load_scheduled(week_start)
+            self.eligibility_checker.bulk_load_next_annual()
+            print(f"DEBUG: OPTIMIZATION - Data pre-loading complete!")
+
             # Generate assignments
             assignments = self.assignment_generator.generate_assignments(
                 equipment_list, week_start, weekly_pm_target
@@ -591,6 +706,10 @@ class PMSchedulingService:
 
             self.conn.commit()
 
+            # Clear caches to free memory
+            self.completion_repo.clear_cache()
+            self.eligibility_checker.clear_cache()
+
             return {
                 'success': True,
                 'total_assignments': len(scheduled_assignments),
@@ -600,6 +719,9 @@ class PMSchedulingService:
 
         except Exception as e:
             self.conn.rollback()
+            # Clear caches even on error
+            self.completion_repo.clear_cache()
+            self.eligibility_checker.clear_cache()
             import traceback
             traceback.print_exc()
             return {'success': False, 'error': str(e)}
@@ -642,7 +764,7 @@ class PMSchedulingService:
         return equipment_list
     
     def _assign_and_save(self, assignments: List[PMAssignment], week_start: datetime, week_start_str: str):
-        """Assign to technicians and save to database"""
+        """Assign to technicians and save to database - OPTIMIZED WITH BATCH INSERT"""
 
         cursor = self.conn.cursor()
         scheduled_assignments = []
@@ -659,10 +781,14 @@ class PMSchedulingService:
         total_assignments = len(assignments)
         print(f"DEBUG: Assigning {total_assignments} PMs to technicians...")
 
+        # Prepare batch data for database insert
+        batch_insert_data = []
+
         for i, assignment in enumerate(assignments):
-            # Yield to event loop every 25 assignments to prevent UI freeze
-            if i > 0 and i % 25 == 0:
-                print(f"DEBUG: Progress: {i}/{total_assignments} assignments saved ({i*100//total_assignments}%)")
+            # Yield to event loop every 100 assignments to prevent UI freeze
+            # (Increased from 25 due to batch insert optimization - much faster now)
+            if i > 0 and i % 100 == 0:
+                print(f"DEBUG: Progress: {i}/{total_assignments} assignments processed ({i*100//total_assignments}%)")
                 if self.root:
                     self.root.update_idletasks()  # Yield to tkinter event loop
 
@@ -674,12 +800,8 @@ class PMSchedulingService:
             day_offset = i % 5  # Spread across weekdays
             scheduled_date = week_start + timedelta(days=day_offset)
 
-            # Save to database
-            cursor.execute('''
-                INSERT INTO weekly_pm_schedules
-                (week_start_date, bfm_equipment_no, pm_type, assigned_technician, scheduled_date)
-                VALUES (%s, %s, %s, %s, %s)
-            ''', (
+            # Add to batch insert data
+            batch_insert_data.append((
                 week_start_str,
                 assignment.bfm_no,
                 assignment.pm_type.value,
@@ -697,7 +819,13 @@ class PMSchedulingService:
                 'priority_score': assignment.priority_score
             })
 
-            print(f"DEBUG: NEW SYSTEM - Assigned {assignment.bfm_no} - {assignment.pm_type.value} PM to {technician}")
+        # PERFORMANCE OPTIMIZATION: Batch insert all assignments at once
+        print(f"DEBUG: Saving {len(batch_insert_data)} assignments to database (batch insert)...")
+        cursor.executemany('''
+            INSERT INTO weekly_pm_schedules
+            (week_start_date, bfm_equipment_no, pm_type, assigned_technician, scheduled_date)
+            VALUES (%s, %s, %s, %s, %s)
+        ''', batch_insert_data)
 
         print(f"DEBUG: Finished assigning all {total_assignments} PMs")
         return scheduled_assignments
