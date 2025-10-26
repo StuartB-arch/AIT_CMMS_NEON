@@ -117,7 +117,7 @@ class CompletionRecordRepository:
             SELECT bfm_equipment_no, pm_type, completion_date, technician_name
             FROM pm_completions
             WHERE bfm_equipment_no = %s
-            AND completion_date >= CURRENT_DATE - INTERVAL '%s days'
+            AND completion_date::DATE >= CURRENT_DATE - INTERVAL '%s days'
             ORDER BY completion_date DESC
         ''', (bfm_no, days))
     
