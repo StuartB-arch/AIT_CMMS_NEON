@@ -366,8 +366,9 @@ class PMEligibilityChecker:
 class PMAssignmentGenerator:
     """Responsible for generating PM assignments"""
 
-    def __init__(self, eligibility_checker: PMEligibilityChecker):
+    def __init__(self, eligibility_checker: PMEligibilityChecker, root=None):
         self.eligibility_checker = eligibility_checker
+        self.root = root  # Store root window for UI updates
 
     def generate_assignments(self, equipment_list: List[Equipment],
                            week_start: datetime, max_assignments: int) -> List[PMAssignment]:
@@ -376,7 +377,16 @@ class PMAssignmentGenerator:
         potential_assignments = []
         equipment_priority_map = {}  # Map to store equipment priority
 
-        for equipment in equipment_list:
+        total_equipment = len(equipment_list)
+        print(f"DEBUG: Processing {total_equipment} equipment items...")
+
+        for idx, equipment in enumerate(equipment_list):
+            # Yield to event loop every 50 items to prevent UI freeze
+            if idx > 0 and idx % 50 == 0:
+                print(f"DEBUG: Progress: {idx}/{total_equipment} equipment processed ({idx*100//total_equipment}%)")
+                if self.root:
+                    self.root.update_idletasks()  # Yield to tkinter event loop
+
             # Skip inactive equipment
             if equipment.status not in ['Active']:
                 continue
@@ -419,9 +429,13 @@ class PMAssignmentGenerator:
                             annual_result.reason
                         ))
 
+        print(f"DEBUG: Finished processing all {total_equipment} equipment items")
+        print(f"DEBUG: Found {len(potential_assignments)} potential assignments")
+
         # Sort by priority level first (P1, P2, P3, then others), then by priority_score (days overdue)
         # Priority level: 1 (P1) comes first, then 2 (P2), then 3 (P3), then 99 (others)
         # Within each priority level, sort by priority_score (higher = more overdue)
+        print(f"DEBUG: Sorting assignments by priority...")
         potential_assignments.sort(
             key=lambda x: (
                 equipment_priority_map.get(x.bfm_no, 99),  # Sort by priority level (1, 2, 3, 99)
@@ -434,15 +448,16 @@ class PMAssignmentGenerator:
 class PMSchedulingService:
     """Main orchestrator class"""
 
-    def __init__(self, conn, technicians: List[str]):
+    def __init__(self, conn, technicians: List[str], root=None):
         self.conn = conn
         self.technicians = technicians
+        self.root = root  # Store root window for UI updates
 
         # Initialize components
         self.date_parser = DateParser(conn)
         self.completion_repo = CompletionRecordRepository(conn)
         self.eligibility_checker = PMEligibilityChecker(self.date_parser, self.completion_repo)
-        self.assignment_generator = PMAssignmentGenerator(self.eligibility_checker)
+        self.assignment_generator = PMAssignmentGenerator(self.eligibility_checker, root)
 
         # Load priority assets from CSV files
         self.priority_map = self._load_priority_assets()
@@ -628,6 +643,7 @@ class PMSchedulingService:
     
     def _assign_and_save(self, assignments: List[PMAssignment], week_start: datetime, week_start_str: str):
         """Assign to technicians and save to database"""
+
         cursor = self.conn.cursor()
         scheduled_assignments = []
 
@@ -640,18 +656,27 @@ class PMSchedulingService:
             print("INFO: No assignments to schedule")
             return scheduled_assignments
 
+        total_assignments = len(assignments)
+        print(f"DEBUG: Assigning {total_assignments} PMs to technicians...")
+
         for i, assignment in enumerate(assignments):
+            # Yield to event loop every 25 assignments to prevent UI freeze
+            if i > 0 and i % 25 == 0:
+                print(f"DEBUG: Progress: {i}/{total_assignments} assignments saved ({i*100//total_assignments}%)")
+                if self.root:
+                    self.root.update_idletasks()  # Yield to tkinter event loop
+
             # Distribute among technicians
             tech_index = i % len(self.technicians)
             technician = self.technicians[tech_index]
-            
+
             # Schedule throughout the week
             day_offset = i % 5  # Spread across weekdays
             scheduled_date = week_start + timedelta(days=day_offset)
-            
+
             # Save to database
             cursor.execute('''
-                INSERT INTO weekly_pm_schedules 
+                INSERT INTO weekly_pm_schedules
                 (week_start_date, bfm_equipment_no, pm_type, assigned_technician, scheduled_date)
                 VALUES (%s, %s, %s, %s, %s)
             ''', (
@@ -661,7 +686,7 @@ class PMSchedulingService:
                 technician,
                 scheduled_date.strftime('%Y-%m-%d')
             ))
-            
+
             scheduled_assignments.append({
                 'bfm_no': assignment.bfm_no,
                 'pm_type': assignment.pm_type.value,
@@ -671,9 +696,10 @@ class PMSchedulingService:
                 'reason': assignment.reason,
                 'priority_score': assignment.priority_score
             })
-            
+
             print(f"DEBUG: NEW SYSTEM - Assigned {assignment.bfm_no} - {assignment.pm_type.value} PM to {technician}")
-        
+
+        print(f"DEBUG: Finished assigning all {total_assignments} PMs")
         return scheduled_assignments
 
 
@@ -13454,7 +13480,7 @@ class AITCMMSSystem:
                 return
 
             # Create the new PM scheduling service
-            pm_service = PMSchedulingService(self.conn, self.technicians)
+            pm_service = PMSchedulingService(self.conn, self.technicians, self.root)
 
             # Get the week start date
             week_start = self.week_start_var.get()
