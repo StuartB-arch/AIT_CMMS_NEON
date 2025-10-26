@@ -500,14 +500,19 @@ class MROStockManager:
         
         item = self.mro_tree.item(selected[0])
         part_number = item['values'][0]
-        
-        # Get full part data
-        cursor = self.conn.cursor()
-        cursor.execute('SELECT * FROM mro_inventory WHERE part_number = %s', (part_number,))
-        part_data = cursor.fetchone()
-        
-        if not part_data:
-            messagebox.showerror("Error", "Part not found")
+
+        try:
+            # Get full part data
+            cursor = self.conn.cursor()
+            cursor.execute('SELECT * FROM mro_inventory WHERE part_number = %s', (part_number,))
+            part_data = cursor.fetchone()
+
+            if not part_data:
+                messagebox.showerror("Error", "Part not found")
+                return
+        except Exception as e:
+            self.conn.rollback()
+            messagebox.showerror("Database Error", f"Error loading part data: {str(e)}")
             return
         
         # Create edit dialog (similar to add dialog but pre-filled)
@@ -755,14 +760,19 @@ class MROStockManager:
     
         item = self.mro_tree.item(selected[0])
         part_number = item['values'][0]
-    
-        # Get full part data
-        cursor = self.conn.cursor()
-        cursor.execute('SELECT * FROM mro_inventory WHERE part_number = %s', (part_number,))
-        part_data = cursor.fetchone()
-    
-        if not part_data:
-            messagebox.showerror("Error", "Part not found")
+
+        try:
+            # Get full part data
+            cursor = self.conn.cursor()
+            cursor.execute('SELECT * FROM mro_inventory WHERE part_number = %s', (part_number,))
+            part_data = cursor.fetchone()
+
+            if not part_data:
+                messagebox.showerror("Error", "Part not found")
+                return
+        except Exception as e:
+            self.conn.rollback()
+            messagebox.showerror("Database Error", f"Error loading part details: {str(e)}")
             return
     
         # Create details dialog
@@ -876,58 +886,63 @@ class MROStockManager:
         header_frame = ttk.Frame(history_frame)
         header_frame.pack(fill='x', padx=10, pady=10)
     
-        ttk.Label(header_frame, text=f"Corrective Maintenance History for {part_number}", 
+        ttk.Label(header_frame, text=f"Corrective Maintenance History for {part_number}",
                 font=('Arial', 11, 'bold')).pack()
-        
-        # Get CM usage data
-        cursor.execute('''
-            SELECT 
-                cp.cm_number,
-                cm.description,
-                cm.bfm_equipment_no,
-                cp.quantity_used,
-                cp.total_cost,
-                cp.recorded_date,
-                cp.recorded_by,
-                cm.status,
-                cp.notes
-            FROM cm_parts_used cp
-            LEFT JOIN corrective_maintenance cm ON cp.cm_number = cm.cm_number
-            WHERE cp.part_number = %s
-            ORDER BY cp.recorded_date DESC
-            LIMIT 50
-        ''', (part_number,))
-    
-        cm_history = cursor.fetchall()
-    
-        # Statistics frame
-        stats_frame = ttk.LabelFrame(history_frame, text="Usage Statistics", padding=10)
-        stats_frame.pack(fill='x', padx=10, pady=5)
-    
-        if cm_history:
-            total_cms = len(cm_history)
-            total_qty_used = sum(row[3] for row in cm_history)
-            total_cost = sum(row[4] or 0 for row in cm_history)
-        
-            stats_text = (f"Total CMs: {total_cms} | "
-                        f"Total Quantity Used: {total_qty_used:.2f} {unit} | "
-                        f"Total Cost: ${total_cost:.2f}")
-            ttk.Label(stats_frame, text=stats_text, font=('Arial', 10)).pack()
-        
-            # Recent usage (last 30 days)
+
+        try:
+            # Get CM usage data
             cursor.execute('''
-                SELECT SUM(quantity_used)
-                FROM cm_parts_used
-                WHERE part_number = %s
-                AND recorded_date >= CURRENT_DATE - INTERVAL '30 days'
+                SELECT
+                    cp.cm_number,
+                    cm.description,
+                    cm.bfm_equipment_no,
+                    cp.quantity_used,
+                    cp.total_cost,
+                    cp.recorded_date,
+                    cp.recorded_by,
+                    cm.status,
+                    cp.notes
+                FROM cm_parts_used cp
+                LEFT JOIN corrective_maintenance cm ON cp.cm_number = cm.cm_number
+                WHERE cp.part_number = %s
+                ORDER BY cp.recorded_date DESC
+                LIMIT 50
             ''', (part_number,))
-        
-            recent_usage = cursor.fetchone()[0] or 0
-            ttk.Label(stats_frame, text=f"Usage Last 30 Days: {recent_usage:.2f} {unit}", 
-                    font=('Arial', 9, 'italic')).pack()
-        else:
-            ttk.Label(stats_frame, text="No CM usage history available", 
-                    font=('Arial', 10, 'italic')).pack()
+
+            cm_history = cursor.fetchall()
+
+            # Statistics frame
+            stats_frame = ttk.LabelFrame(history_frame, text="Usage Statistics", padding=10)
+            stats_frame.pack(fill='x', padx=10, pady=5)
+
+            if cm_history:
+                total_cms = len(cm_history)
+                total_qty_used = sum(row[3] for row in cm_history)
+                total_cost = sum(row[4] or 0 for row in cm_history)
+
+                stats_text = (f"Total CMs: {total_cms} | "
+                            f"Total Quantity Used: {total_qty_used:.2f} {unit} | "
+                            f"Total Cost: ${total_cost:.2f}")
+                ttk.Label(stats_frame, text=stats_text, font=('Arial', 10)).pack()
+
+                # Recent usage (last 30 days)
+                cursor.execute('''
+                    SELECT SUM(quantity_used)
+                    FROM cm_parts_used
+                    WHERE part_number = %s
+                    AND recorded_date::timestamp >= CURRENT_DATE - INTERVAL '30 days'
+                ''', (part_number,))
+
+                recent_usage = cursor.fetchone()[0] or 0
+                ttk.Label(stats_frame, text=f"Usage Last 30 Days: {recent_usage:.2f} {unit}",
+                        font=('Arial', 9, 'italic')).pack()
+            else:
+                ttk.Label(stats_frame, text="No CM usage history available",
+                        font=('Arial', 10, 'italic')).pack()
+        except Exception as e:
+            self.conn.rollback()
+            messagebox.showerror("Database Error", f"Error loading CM history: {str(e)}")
+            return
     
         # History treeview
         tree_frame = ttk.Frame(history_frame)
@@ -1075,32 +1090,38 @@ class MROStockManager:
         report_dialog = tk.Toplevel(self.root)
         report_dialog.title("Parts Usage by CM Report")
         report_dialog.geometry("900x600")
-        
+
         # Create report content
         report_frame = ttk.Frame(report_dialog)
         report_frame.pack(fill='both', expand=True, padx=10, pady=10)
-        
-        ttk.Label(report_frame, text="Parts Consumption Analysis", 
+
+        ttk.Label(report_frame, text="Parts Consumption Analysis",
                 font=('Arial', 12, 'bold')).pack(pady=10)
-    
-        # Get summary data
-        cursor = self.conn.cursor()
-        cursor.execute('''
-            SELECT
-                mi.part_number,
-                mi.name,
-                SUM(cp.quantity_used) as total_qty,
-                COUNT(DISTINCT cp.cm_number) as cm_count,
-                SUM(cp.total_cost) as total_cost
-            FROM cm_parts_used cp
-            JOIN mro_inventory mi ON cp.part_number = mi.part_number
-            WHERE cp.recorded_date >= CURRENT_DATE - INTERVAL '90 days'
-            GROUP BY mi.part_number
-            ORDER BY total_cost DESC
-            LIMIT 50
-        ''')
-    
-        usage_data = cursor.fetchall()
+
+        try:
+            # Get summary data
+            cursor = self.conn.cursor()
+            cursor.execute('''
+                SELECT
+                    mi.part_number,
+                    mi.name,
+                    SUM(cp.quantity_used) as total_qty,
+                    COUNT(DISTINCT cp.cm_number) as cm_count,
+                    SUM(cp.total_cost) as total_cost
+                FROM cm_parts_used cp
+                JOIN mro_inventory mi ON cp.part_number = mi.part_number
+                WHERE cp.recorded_date::timestamp >= CURRENT_DATE - INTERVAL '90 days'
+                GROUP BY mi.part_number
+                ORDER BY total_cost DESC
+                LIMIT 50
+            ''')
+
+            usage_data = cursor.fetchall()
+        except Exception as e:
+            self.conn.rollback()
+            messagebox.showerror("Database Error", f"Error loading usage report: {str(e)}")
+            report_dialog.destroy()
+            return
     
         # Display in treeview
         columns = ('Part #', 'Part Name', 'Total Qty Used', 'CMs Used In', 'Total Cost')
