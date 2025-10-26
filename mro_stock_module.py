@@ -916,10 +916,10 @@ class MROStockManager:
         
             # Recent usage (last 30 days)
             cursor.execute('''
-                SELECT SUM(quantity_used) 
-                FROM cm_parts_used 
+                SELECT SUM(quantity_used)
+                FROM cm_parts_used
                 WHERE part_number = %s
-                AND recorded_date >= date('now', '-30 days')
+                AND recorded_date >= CURRENT_DATE - INTERVAL '30 days'
             ''', (part_number,))
         
             recent_usage = cursor.fetchone()[0] or 0
@@ -1086,7 +1086,7 @@ class MROStockManager:
         # Get summary data
         cursor = self.conn.cursor()
         cursor.execute('''
-            SELECT 
+            SELECT
                 mi.part_number,
                 mi.name,
                 SUM(cp.quantity_used) as total_qty,
@@ -1094,7 +1094,7 @@ class MROStockManager:
                 SUM(cp.total_cost) as total_cost
             FROM cm_parts_used cp
             JOIN mro_inventory mi ON cp.part_number = mi.part_number
-            WHERE cp.recorded_date >= date('now', '-90 days')
+            WHERE cp.recorded_date >= CURRENT_DATE - INTERVAL '90 days'
             GROUP BY mi.part_number
             ORDER BY total_cost DESC
             LIMIT 50
