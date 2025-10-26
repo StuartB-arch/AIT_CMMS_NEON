@@ -11,6 +11,7 @@ import os
 from PIL import Image, ImageTk
 import shutil
 import csv
+import io
 
 class MROStockManager:
     """MRO (Maintenance, Repair, Operations) Stock Management"""
@@ -128,6 +129,8 @@ class MROStockManager:
                 bin TEXT,
                 picture_1_path TEXT,
                 picture_2_path TEXT,
+                picture_1_data BYTEA,
+                picture_2_data BYTEA,
                 notes TEXT,
                 last_updated TEXT DEFAULT CURRENT_TIMESTAMP,
                 created_date TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -224,10 +227,12 @@ class MROStockManager:
                   command=self.export_to_csv, width=20).pack(side='left', padx=5)
         ttk.Button(btn_frame2, text="📊 Stock Report", 
                   command=self.generate_stock_report, width=20).pack(side='left', padx=5)
-        ttk.Button(btn_frame2, text="⚠️ Low Stock Alert", 
+        ttk.Button(btn_frame2, text="⚠️ Low Stock Alert",
                   command=self.show_low_stock, width=20).pack(side='left', padx=5)
-        
-        ttk.Button(controls_frame, text="🗑️ CLEAR ALL", 
+        ttk.Button(btn_frame2, text="🔄 Migrate Photos to DB",
+                  command=self.migrate_photos_to_database, width=20).pack(side='left', padx=5)
+
+        ttk.Button(controls_frame, text="🗑️ CLEAR ALL",
                   command=lambda: self.clear_all_inventory()).pack(side='right', padx=5)
         # Search and filter frame
         search_frame = ttk.LabelFrame(mro_frame, text="Search & Filter", padding=10)
@@ -447,9 +452,9 @@ class MROStockManager:
         def save_part():
             try:
                 # Validate required fields
-                required = ['name', 'part_number', 'engineering_system', 
+                required = ['name', 'part_number', 'engineering_system',
                         'unit_of_measure', 'quantity_in_stock', 'minimum_stock', 'location']
-            
+
                 for field in required:
                     if field in ['notes', 'picture_1', 'picture_2']:
                         continue
@@ -457,18 +462,34 @@ class MROStockManager:
                     if not value:
                         messagebox.showerror("Error", f"Please fill in: {field.replace('_', ' ').title()}")
                         return
-            
+
+                # Read image files as binary data
+                pic1_path = fields['picture_1'].get()
+                pic2_path = fields['picture_2'].get()
+
+                pic1_data = None
+                pic2_data = None
+
+                if pic1_path and os.path.exists(pic1_path):
+                    with open(pic1_path, 'rb') as f:
+                        pic1_data = f.read()
+
+                if pic2_path and os.path.exists(pic2_path):
+                    with open(pic2_path, 'rb') as f:
+                        pic2_data = f.read()
+
                 # Insert into database
                 cursor = self.conn.cursor()
-            
+
                 notes_text = fields['notes'].get('1.0', 'end-1c') if 'notes' in fields else ''
-            
+
                 cursor.execute('''
                     INSERT INTO mro_inventory (
                         name, part_number, model_number, equipment, engineering_system,
                         unit_of_measure, quantity_in_stock, unit_price, minimum_stock,
-                        supplier, location, rack, row, bin, picture_1_path, picture_2_path, notes
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        supplier, location, rack, row, bin, picture_1_path, picture_2_path,
+                        picture_1_data, picture_2_data, notes
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ''', (
                     fields['name'].get(),
                     fields['part_number'].get(),
@@ -484,11 +505,13 @@ class MROStockManager:
                     fields['rack'].get(),
                     fields['row'].get(),
                     fields['bin'].get(),
-                    fields['picture_1'].get(),
-                    fields['picture_2'].get(),
+                    pic1_path,
+                    pic2_path,
+                    pic1_data,
+                    pic2_data,
                     notes_text
                 ))
-            
+
                 self.conn.commit()
                 messagebox.showinfo("Success", "Part added successfully!")
                 dialog.destroy()
@@ -564,8 +587,8 @@ class MROStockManager:
         # Parse part_data
         columns = ['id', 'name', 'part_number', 'model_number', 'equipment', 'engineering_system',
                   'unit_of_measure', 'quantity_in_stock', 'unit_price', 'minimum_stock',
-                  'supplier', 'location', 'rack', 'row', 'bin', 'picture_1', 
-                  'picture_2', 'notes', 'last_updated', 'created_date', 'status']
+                  'supplier', 'location', 'rack', 'row', 'bin', 'picture_1_path',
+                  'picture_2_path', 'picture_1_data', 'picture_2_data', 'notes', 'last_updated', 'created_date', 'status']
         
         part_dict = dict(zip(columns, part_data))
         
@@ -700,16 +723,32 @@ class MROStockManager:
         
         def update_part():
             try:
+                # Read image files as binary data
+                pic1_path = fields['picture_1'].get()
+                pic2_path = fields['picture_2'].get()
+
+                pic1_data = None
+                pic2_data = None
+
+                if pic1_path and os.path.exists(pic1_path):
+                    with open(pic1_path, 'rb') as f:
+                        pic1_data = f.read()
+
+                if pic2_path and os.path.exists(pic2_path):
+                    with open(pic2_path, 'rb') as f:
+                        pic2_data = f.read()
+
                 cursor = self.conn.cursor()
-                
+
                 notes_text = fields['notes'].get('1.0', 'end-1c')
-                
+
                 cursor.execute('''
                     UPDATE mro_inventory SET
                         name = %s, model_number = %s, equipment = %s, engineering_system = %s,
-                        unit_of_measure = %s, quantity_in_stock = %s, unit_price = %s, 
-                        minimum_stock = %s, supplier = %s, location = %s, rack = %s, 
-                        row = %s, bin = %s, picture_1_path = %s, picture_2_path = %s, 
+                        unit_of_measure = %s, quantity_in_stock = %s, unit_price = %s,
+                        minimum_stock = %s, supplier = %s, location = %s, rack = %s,
+                        row = %s, bin = %s, picture_1_path = %s, picture_2_path = %s,
+                        picture_1_data = %s, picture_2_data = %s,
                         notes = %s, status = %s, last_updated = %s
                     WHERE part_number = %s
                 ''', (
@@ -726,19 +765,21 @@ class MROStockManager:
                     fields['rack'].get(),
                     fields['row'].get(),
                     fields['bin'].get(),
-                    fields['picture_1'].get(),
-                    fields['picture_2'].get(),
+                    pic1_path,
+                    pic2_path,
+                    pic1_data,
+                    pic2_data,
                     notes_text,
                     fields['status'].get(),
                     datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                     part_number
                 ))
-                
+
                 self.conn.commit()
                 messagebox.showinfo("Success", "Part updated successfully!")
                 dialog.destroy()
                 self.refresh_mro_list()
-                
+
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to update part: {str(e)}")
         
@@ -834,9 +875,9 @@ class MROStockManager:
         scrollbar.pack(side="right", fill="y")
         
         # Parse part data
-        (id, name, part_num, model, equipment, eng_system, unit, qty_stock, 
-        unit_price, min_stock, supplier, location, rack, row_num, bin_num, 
-        pic1, pic2, notes, last_updated, created_date, status) = part_data
+        (id, name, part_num, model, equipment, eng_system, unit, qty_stock,
+        unit_price, min_stock, supplier, location, rack, row_num, bin_num,
+        pic1_path, pic2_path, pic1_data, pic2_data, notes, last_updated, created_date, status) = part_data
     
         row = 0
     
@@ -888,7 +929,7 @@ class MROStockManager:
 
         # Pictures section
         row += 1
-        if pic1 or pic2:
+        if pic1_data or pic2_data or pic1_path or pic2_path:
             ttk.Label(scrollable_frame, text="Pictures:",
                     font=('Arial', 10, 'bold')).grid(
                         row=row, column=0, sticky='nw', padx=20, pady=10)
@@ -897,9 +938,11 @@ class MROStockManager:
             pic_frame.grid(row=row, column=1, sticky='w', padx=20, pady=10)
 
             # Display Picture 1
-            if pic1 and os.path.exists(pic1):
+            pic1_displayed = False
+            if pic1_data:
                 try:
-                    img1 = Image.open(pic1)
+                    # Load from database binary data
+                    img1 = Image.open(io.BytesIO(pic1_data))
                     img1.thumbnail((200, 200))
                     photo1 = ImageTk.PhotoImage(img1)
                     label1 = ttk.Label(pic_frame, image=photo1)
@@ -907,17 +950,35 @@ class MROStockManager:
                     label1.pack(side='left', padx=5)
                     ttk.Label(pic_frame, text="Picture 1",
                             font=('Arial', 8)).pack(side='left', padx=5)
+                    pic1_displayed = True
+                except Exception as e:
+                    ttk.Label(pic_frame, text=f"Picture 1: Error loading from database",
+                            foreground='red').pack(side='left', padx=5)
+            elif pic1_path and os.path.exists(pic1_path):
+                try:
+                    # Fallback to file path for legacy data
+                    img1 = Image.open(pic1_path)
+                    img1.thumbnail((200, 200))
+                    photo1 = ImageTk.PhotoImage(img1)
+                    label1 = ttk.Label(pic_frame, image=photo1)
+                    label1.image = photo1  # Keep a reference
+                    label1.pack(side='left', padx=5)
+                    ttk.Label(pic_frame, text="Picture 1",
+                            font=('Arial', 8)).pack(side='left', padx=5)
+                    pic1_displayed = True
                 except Exception as e:
                     ttk.Label(pic_frame, text=f"Picture 1: Error loading image",
                             foreground='red').pack(side='left', padx=5)
-            elif pic1:
-                ttk.Label(pic_frame, text=f"Picture 1: {pic1}\n(File not found)",
+            elif pic1_path:
+                ttk.Label(pic_frame, text=f"Picture 1: (File not found)",
                         foreground='gray').pack(side='left', padx=5)
 
             # Display Picture 2
-            if pic2 and os.path.exists(pic2):
+            pic2_displayed = False
+            if pic2_data:
                 try:
-                    img2 = Image.open(pic2)
+                    # Load from database binary data
+                    img2 = Image.open(io.BytesIO(pic2_data))
                     img2.thumbnail((200, 200))
                     photo2 = ImageTk.PhotoImage(img2)
                     label2 = ttk.Label(pic_frame, image=photo2)
@@ -925,11 +986,27 @@ class MROStockManager:
                     label2.pack(side='left', padx=5)
                     ttk.Label(pic_frame, text="Picture 2",
                             font=('Arial', 8)).pack(side='left', padx=5)
+                    pic2_displayed = True
+                except Exception as e:
+                    ttk.Label(pic_frame, text=f"Picture 2: Error loading from database",
+                            foreground='red').pack(side='left', padx=5)
+            elif pic2_path and os.path.exists(pic2_path):
+                try:
+                    # Fallback to file path for legacy data
+                    img2 = Image.open(pic2_path)
+                    img2.thumbnail((200, 200))
+                    photo2 = ImageTk.PhotoImage(img2)
+                    label2 = ttk.Label(pic_frame, image=photo2)
+                    label2.image = photo2  # Keep a reference
+                    label2.pack(side='left', padx=5)
+                    ttk.Label(pic_frame, text="Picture 2",
+                            font=('Arial', 8)).pack(side='left', padx=5)
+                    pic2_displayed = True
                 except Exception as e:
                     ttk.Label(pic_frame, text=f"Picture 2: Error loading image",
                             foreground='red').pack(side='left', padx=5)
-            elif pic2:
-                ttk.Label(pic_frame, text=f"Picture 2: {pic2}\n(File not found)",
+            elif pic2_path:
+                ttk.Label(pic_frame, text=f"Picture 2: (File not found)",
                         foreground='gray').pack(side='left', padx=5)
 
             row += 1
@@ -1690,6 +1767,81 @@ class MROStockManager:
         """Sort MRO treeview by column"""
         # Implement sorting logic here
         pass
+
+    def migrate_photos_to_database(self):
+        """Migrate existing photos from file paths to database binary storage"""
+        try:
+            cursor = self.conn.cursor()
+
+            # Get all parts with photo paths but no binary data
+            cursor.execute('''
+                SELECT part_number, picture_1_path, picture_2_path
+                FROM mro_inventory
+                WHERE (picture_1_path IS NOT NULL AND picture_1_path != '' AND picture_1_data IS NULL)
+                   OR (picture_2_path IS NOT NULL AND picture_2_path != '' AND picture_2_data IS NULL)
+            ''')
+
+            parts_to_migrate = cursor.fetchall()
+
+            if not parts_to_migrate:
+                messagebox.showinfo("Migration Complete", "No photos need migration. All photos are already in the database!")
+                return
+
+            migrated_count = 0
+            skipped_count = 0
+            error_count = 0
+
+            for part_number, pic1_path, pic2_path in parts_to_migrate:
+                pic1_data = None
+                pic2_data = None
+
+                # Try to read picture 1
+                if pic1_path and os.path.exists(pic1_path):
+                    try:
+                        with open(pic1_path, 'rb') as f:
+                            pic1_data = f.read()
+                    except Exception as e:
+                        error_count += 1
+                        print(f"Error reading {pic1_path}: {e}")
+
+                # Try to read picture 2
+                if pic2_path and os.path.exists(pic2_path):
+                    try:
+                        with open(pic2_path, 'rb') as f:
+                            pic2_data = f.read()
+                    except Exception as e:
+                        error_count += 1
+                        print(f"Error reading {pic2_path}: {e}")
+
+                # Update database with binary data
+                if pic1_data or pic2_data:
+                    try:
+                        cursor.execute('''
+                            UPDATE mro_inventory
+                            SET picture_1_data = COALESCE(picture_1_data, %s),
+                                picture_2_data = COALESCE(picture_2_data, %s)
+                            WHERE part_number = %s
+                        ''', (pic1_data, pic2_data, part_number))
+                        migrated_count += 1
+                    except Exception as e:
+                        error_count += 1
+                        print(f"Error updating database for {part_number}: {e}")
+                else:
+                    skipped_count += 1
+
+            self.conn.commit()
+
+            messagebox.showinfo(
+                "Migration Complete",
+                f"Photo migration completed!\n\n"
+                f"Successfully migrated: {migrated_count} parts\n"
+                f"Skipped (files not found): {skipped_count} parts\n"
+                f"Errors: {error_count} parts"
+            )
+
+        except Exception as e:
+            self.conn.rollback()
+            messagebox.showerror("Migration Error", f"Failed to migrate photos:\n{str(e)}")
 
 
 # ============================================================================
