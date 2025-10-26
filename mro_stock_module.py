@@ -160,7 +160,33 @@ class MROStockManager:
                 FOREIGN KEY (part_number) REFERENCES mro_inventory (part_number)
             )
         ''')
-        
+
+        # CM parts usage table for tracking parts used in corrective maintenance
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS cm_parts_used (
+                id SERIAL PRIMARY KEY,
+                cm_number TEXT NOT NULL,
+                part_number TEXT NOT NULL,
+                quantity_used REAL NOT NULL,
+                total_cost REAL DEFAULT 0,
+                recorded_date TEXT DEFAULT CURRENT_TIMESTAMP,
+                recorded_by TEXT,
+                notes TEXT,
+                FOREIGN KEY (part_number) REFERENCES mro_inventory (part_number)
+            )
+        ''')
+
+        # Create index for faster CM parts queries
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_cm_parts_cm_number
+            ON cm_parts_used(cm_number)
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_cm_parts_part_number
+            ON cm_parts_used(part_number)
+        ''')
+
         self.conn.commit()
         print("MRO inventory database initialized")
     
@@ -851,7 +877,7 @@ class MROStockManager:
     
         # Notes section
         if notes:
-            ttk.Label(scrollable_frame, text="Notes:", 
+            ttk.Label(scrollable_frame, text="Notes:",
                     font=('Arial', 10, 'bold')).grid(
                         row=row, column=0, sticky='nw', padx=20, pady=5)
             notes_display = tk.Text(scrollable_frame, width=50, height=4, wrap='word')
@@ -859,7 +885,55 @@ class MROStockManager:
             notes_display.config(state='disabled')
             notes_display.grid(row=row, column=1, sticky='w', padx=20, pady=5)
             row += 1
-    
+
+        # Pictures section
+        row += 1
+        if pic1 or pic2:
+            ttk.Label(scrollable_frame, text="Pictures:",
+                    font=('Arial', 10, 'bold')).grid(
+                        row=row, column=0, sticky='nw', padx=20, pady=10)
+
+            pic_frame = ttk.Frame(scrollable_frame)
+            pic_frame.grid(row=row, column=1, sticky='w', padx=20, pady=10)
+
+            # Display Picture 1
+            if pic1 and os.path.exists(pic1):
+                try:
+                    img1 = Image.open(pic1)
+                    img1.thumbnail((200, 200))
+                    photo1 = ImageTk.PhotoImage(img1)
+                    label1 = ttk.Label(pic_frame, image=photo1)
+                    label1.image = photo1  # Keep a reference
+                    label1.pack(side='left', padx=5)
+                    ttk.Label(pic_frame, text="Picture 1",
+                            font=('Arial', 8)).pack(side='left', padx=5)
+                except Exception as e:
+                    ttk.Label(pic_frame, text=f"Picture 1: Error loading image",
+                            foreground='red').pack(side='left', padx=5)
+            elif pic1:
+                ttk.Label(pic_frame, text=f"Picture 1: {pic1}\n(File not found)",
+                        foreground='gray').pack(side='left', padx=5)
+
+            # Display Picture 2
+            if pic2 and os.path.exists(pic2):
+                try:
+                    img2 = Image.open(pic2)
+                    img2.thumbnail((200, 200))
+                    photo2 = ImageTk.PhotoImage(img2)
+                    label2 = ttk.Label(pic_frame, image=photo2)
+                    label2.image = photo2  # Keep a reference
+                    label2.pack(side='left', padx=5)
+                    ttk.Label(pic_frame, text="Picture 2",
+                            font=('Arial', 8)).pack(side='left', padx=5)
+                except Exception as e:
+                    ttk.Label(pic_frame, text=f"Picture 2: Error loading image",
+                            foreground='red').pack(side='left', padx=5)
+            elif pic2:
+                ttk.Label(pic_frame, text=f"Picture 2: {pic2}\n(File not found)",
+                        foreground='gray').pack(side='left', padx=5)
+
+            row += 1
+
         # Stock status indicator
         row += 1
         if qty_stock < min_stock:
