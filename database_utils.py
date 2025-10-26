@@ -278,7 +278,8 @@ class UserManager:
             """,
             (user_id, username)
         )
-        session_id = cursor.fetchone()[0]
+        result = cursor.fetchone()
+        session_id = result['id'] if isinstance(result, dict) else result[0]
         return session_id
 
     @staticmethod
