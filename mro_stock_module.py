@@ -1799,7 +1799,7 @@ class MROStockManager:
         cursor = self.conn.cursor()
         cursor.execute(query, params)
 
-        for row in cursor.fetchall():
+        for idx, row in enumerate(cursor.fetchall()):
             # Access columns by index based on explicit SELECT order above
             qty = float(row[7])    # quantity_in_stock
             min_stock = float(row[9])  # minimum_stock
@@ -1818,6 +1818,10 @@ class MROStockManager:
                 row[11],  # location
                 status    # status
             ), tags=('low_stock',) if qty < min_stock else ())
+
+            # Yield to event loop every 50 items to keep UI responsive
+            if idx % 50 == 0:
+                self.root.update_idletasks()
         
         # Color low stock items
         self.mro_tree.tag_configure('low_stock', background='#ffcccc')
