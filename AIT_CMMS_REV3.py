@@ -115,9 +115,9 @@ class CompletionRecordRepository:
         cursor = self.conn.cursor()
         cursor.execute('''
             SELECT bfm_equipment_no, pm_type, completion_date, technician_name
-            FROM pm_completions 
+            FROM pm_completions
             WHERE bfm_equipment_no = %s
-            AND completion_date >= DATE('now', '-' || %s || ' days')
+            AND completion_date >= CURRENT_DATE - INTERVAL '%s days'
             ORDER BY completion_date DESC
         ''', (bfm_no, days))
     
@@ -7051,7 +7051,7 @@ class AITCMMSSystem:
             cursor.execute('''
                 SELECT pm_type, assigned_technician, scheduled_date, week_start_date, status
                 FROM weekly_pm_schedules
-                WHERE bfm_equipment_no = %s AND DATE(scheduled_date) >= DATE('now')
+                WHERE bfm_equipment_no = %s AND scheduled_date::date >= CURRENT_DATE
                 ORDER BY scheduled_date ASC LIMIT 5
             ''', (bfm_no,))
         
@@ -10595,15 +10595,15 @@ class AITCMMSSystem:
             
             # PM completion statistics (last 30 days)
             cursor.execute('''
-                SELECT COUNT(*) FROM pm_completions 
-                WHERE completion_date >= DATE('now', '-30 days')
+                SELECT COUNT(*) FROM pm_completions
+                WHERE completion_date >= CURRENT_DATE - INTERVAL '30 days'
             ''')
             recent_completions = cursor.fetchone()[0]
             
             cursor.execute('''
-                SELECT pm_type, COUNT(*) 
-                FROM pm_completions 
-                WHERE completion_date >= DATE('now', '-30 days')
+                SELECT pm_type, COUNT(*)
+                FROM pm_completions
+                WHERE completion_date >= CURRENT_DATE - INTERVAL '30 days'
                 GROUP BY pm_type
             ''')
             pm_type_stats = cursor.fetchall()
@@ -10616,11 +10616,11 @@ class AITCMMSSystem:
             
             # Technician performance (last 30 days)
             cursor.execute('''
-                SELECT technician_name, 
+                SELECT technician_name,
                        COUNT(*) as completed_pms,
                        AVG(labor_hours + labor_minutes/60.0) as avg_hours
-                FROM pm_completions 
-                WHERE completion_date >= DATE('now', '-30 days')
+                FROM pm_completions
+                WHERE completion_date >= CURRENT_DATE - INTERVAL '30 days'
                 GROUP BY technician_name
                 ORDER BY completed_pms DESC
             ''')
@@ -10818,12 +10818,12 @@ class AITCMMSSystem:
         
             # Equipment age analysis (based on creation date if available)
             cursor.execute('''
-                SELECT 
-                    CASE 
-                        WHEN created_date >= DATE('now', '-30 days') THEN 'Last 30 days'
-                        WHEN created_date >= DATE('now', '-90 days') THEN 'Last 90 days'
-                        WHEN created_date >= DATE('now', '-180 days') THEN 'Last 6 months'
-                        WHEN created_date >= DATE('now', '-365 days') THEN 'Last year'
+                SELECT
+                    CASE
+                        WHEN created_date >= CURRENT_DATE - INTERVAL '30 days' THEN 'Last 30 days'
+                        WHEN created_date >= CURRENT_DATE - INTERVAL '90 days' THEN 'Last 90 days'
+                        WHEN created_date >= CURRENT_DATE - INTERVAL '180 days' THEN 'Last 6 months'
+                        WHEN created_date >= CURRENT_DATE - INTERVAL '365 days' THEN 'Last year'
                         ELSE 'Over 1 year'
                     END as age_category,
                     COUNT(*) as count
@@ -10930,17 +10930,17 @@ class AITCMMSSystem:
             cursor.execute('''
                 SELECT e.bfm_equipment_no, e.description, e.location,
                     e.last_monthly_pm, e.last_annual_pm,
-                    CASE 
-                        WHEN e.last_monthly_pm IS NULL OR DATE(e.last_monthly_pm, '+30 days') < DATE('now') THEN 'Monthly Overdue'
-                        WHEN e.last_annual_pm IS NULL OR DATE(e.last_annual_pm, '+365 days') < DATE('now') THEN 'Annual Overdue'
+                    CASE
+                        WHEN e.last_monthly_pm IS NULL OR e.last_monthly_pm + INTERVAL '30 days' < CURRENT_DATE THEN 'Monthly Overdue'
+                        WHEN e.last_annual_pm IS NULL OR e.last_annual_pm + INTERVAL '365 days' < CURRENT_DATE THEN 'Annual Overdue'
                         ELSE 'Current'
                     END as pm_status
                 FROM equipment e
-                WHERE e.status = 'Active' 
+                WHERE e.status = 'Active'
                 AND (
-                    (e.monthly_pm = 1 AND (e.last_monthly_pm IS NULL OR DATE(e.last_monthly_pm, '+30 days') < DATE('now')))
+                    (e.monthly_pm = 1 AND (e.last_monthly_pm IS NULL OR e.last_monthly_pm + INTERVAL '30 days' < CURRENT_DATE))
                     OR
-                    (e.annual_pm = 1 AND (e.last_annual_pm IS NULL OR DATE(e.last_annual_pm, '+365 days') < DATE('now')))
+                    (e.annual_pm = 1 AND (e.last_annual_pm IS NULL OR e.last_annual_pm + INTERVAL '365 days' < CURRENT_DATE))
                 )
                 ORDER BY e.bfm_equipment_no
                 LIMIT 25
@@ -11043,7 +11043,7 @@ class AITCMMSSystem:
                     AVG(pc.labor_hours + pc.labor_minutes/60.0) as avg_hours
                 FROM pm_completions pc
                 JOIN equipment e ON pc.bfm_equipment_no = e.bfm_equipment_no
-                WHERE pc.completion_date >= DATE('now', '-90 days')
+                WHERE pc.completion_date >= CURRENT_DATE - INTERVAL '90 days'
                 GROUP BY COALESCE(e.location, 'Unknown')
                 ORDER BY total_pms DESC
             ''')
@@ -11092,8 +11092,8 @@ class AITCMMSSystem:
                     COUNT(pc.id) as pm_completions,
                     ROUND(CAST(COUNT(pc.id) AS FLOAT) / COUNT(DISTINCT e.bfm_equipment_no), 2) as pms_per_equipment
                 FROM equipment e
-                LEFT JOIN pm_completions pc ON e.bfm_equipment_no = pc.bfm_equipment_no 
-                    AND pc.completion_date >= DATE('now', '-365 days')
+                LEFT JOIN pm_completions pc ON e.bfm_equipment_no = pc.bfm_equipment_no
+                    AND pc.completion_date >= CURRENT_DATE - INTERVAL '365 days'
                 WHERE e.status = 'Active'
                 GROUP BY COALESCE(e.location, 'Unknown')
                 HAVING equipment_count >= 3
@@ -11175,7 +11175,7 @@ class AITCMMSSystem:
                     AVG(labor_hours + labor_minutes/60.0) as avg_hours,
                     COUNT(DISTINCT bfm_equipment_no) as unique_equipment
                 FROM pm_completions
-                WHERE completion_date >= DATE('now', '-30 days')
+                WHERE completion_date >= CURRENT_DATE - INTERVAL '30 days'
                 GROUP BY technician_name
                 ORDER BY recent_pms DESC
             ''')
@@ -11195,10 +11195,10 @@ class AITCMMSSystem:
         
             # Cannot Find reports by technician
             cursor.execute('''
-                SELECT 
+                SELECT
                     technician_name,
                     COUNT(*) as cannot_find_count,
-                    COUNT(CASE WHEN reported_date >= DATE('now', '-30 days') THEN 1 END) as recent_cf
+                    COUNT(CASE WHEN reported_date >= CURRENT_DATE - INTERVAL '30 days' THEN 1 END) as recent_cf
                 FROM cannot_find_assets
                 WHERE status = 'Missing'
                 GROUP BY technician_name
@@ -11718,7 +11718,7 @@ class AITCMMSSystem:
                        AVG(pc.labor_hours + pc.labor_minutes/60.0) as avg_hours,
                        MIN(pc.completion_date) as first_pm,
                        MAX(pc.completion_date) as last_pm,
-                       COUNT(CASE WHEN pc.completion_date >= DATE('now', '-90 days') THEN 1 END) as recent_pms
+                       COUNT(CASE WHEN pc.completion_date >= CURRENT_DATE - INTERVAL '90 days' THEN 1 END) as recent_pms
                 FROM equipment e
                 LEFT JOIN pm_completions pc ON e.bfm_equipment_no = pc.bfm_equipment_no
                 WHERE e.status = 'Active'
@@ -11746,11 +11746,11 @@ class AITCMMSSystem:
             # Equipment with increasing maintenance needs
             cursor.execute('''
                 SELECT bfm_equipment_no,
-                       COUNT(CASE WHEN completion_date >= DATE('now', '-90 days') THEN 1 END) as last_90_days,
-                       COUNT(CASE WHEN completion_date >= DATE('now', '-180 days') AND completion_date < DATE('now', '-90 days') THEN 1 END) as prev_90_days,
+                       COUNT(CASE WHEN completion_date >= CURRENT_DATE - INTERVAL '90 days' THEN 1 END) as last_90_days,
+                       COUNT(CASE WHEN completion_date >= CURRENT_DATE - INTERVAL '180 days' AND completion_date < CURRENT_DATE - INTERVAL '90 days' THEN 1 END) as prev_90_days,
                        COUNT(*) as total_pms
                 FROM pm_completions
-                WHERE completion_date >= DATE('now', '-180 days')
+                WHERE completion_date >= CURRENT_DATE - INTERVAL '180 days'
                 GROUP BY bfm_equipment_no
                 HAVING last_90_days > prev_90_days AND prev_90_days > 0
                 ORDER BY (last_90_days - prev_90_days) DESC
@@ -11809,7 +11809,7 @@ class AITCMMSSystem:
                        ROUND(CAST(COUNT(pc.id) AS FLOAT) / COUNT(DISTINCT e.bfm_equipment_no), 2) as pms_per_equipment
                 FROM equipment e
                 LEFT JOIN pm_completions pc ON e.bfm_equipment_no = pc.bfm_equipment_no
-                    AND pc.completion_date >= DATE('now', '-365 days')
+                    AND pc.completion_date >= CURRENT_DATE - INTERVAL '365 days'
                 WHERE e.status = 'Active'
                 GROUP BY COALESCE(e.location, 'Unknown')
                 HAVING equipment_count >= 3
@@ -11906,11 +11906,11 @@ class AITCMMSSystem:
                        COUNT(*) as total_completions,
                        AVG(labor_hours + labor_minutes/60.0) as avg_hours_per_pm,
                        COUNT(DISTINCT bfm_equipment_no) as unique_equipment,
-                       COUNT(CASE WHEN completion_date >= DATE('now', '-30 days') THEN 1 END) as recent_completions,
+                       COUNT(CASE WHEN completion_date >= CURRENT_DATE - INTERVAL '30 days' THEN 1 END) as recent_completions,
                        MIN(completion_date) as first_completion,
                        MAX(completion_date) as last_completion
                 FROM pm_completions
-                WHERE completion_date >= DATE('now', '-12 months')
+                WHERE completion_date >= CURRENT_DATE - INTERVAL '12 months'
                 GROUP BY technician_name
                 ORDER BY total_completions DESC
             ''')
@@ -12045,7 +12045,7 @@ class AITCMMSSystem:
                        COUNT(DISTINCT technician_name) as technicians_involved,
                        COUNT(DISTINCT bfm_equipment_no) as equipment_serviced
                 FROM pm_completions
-                WHERE completion_date >= DATE('now', '-12 months')
+                WHERE completion_date >= CURRENT_DATE - INTERVAL '12 months'
                 GROUP BY pm_type
                 ORDER BY total_completions DESC
             ''')
