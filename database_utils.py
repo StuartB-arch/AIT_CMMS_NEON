@@ -91,7 +91,7 @@ class DatabaseConnectionPool:
         conn = self.get_connection()
         cursor = None
         try:
-            cursor = conn.cursor(cursor_factory=extras.DictCursor)
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
             yield cursor
             if commit:
                 conn.commit()
@@ -229,17 +229,6 @@ class UserManager:
 
         if not user:
             return None
-
-        # Convert to dict if it's a tuple or list
-        if isinstance(user, (tuple, list)):
-            user = {
-                'id': user[0],
-                'username': user[1],
-                'full_name': user[2],
-                'role': user[3],
-                'password_hash': user[4],
-                'is_active': user[5]
-            }
 
         if not user['is_active']:
             return None
