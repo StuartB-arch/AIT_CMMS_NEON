@@ -60,6 +60,7 @@ class Equipment:
     last_monthly_date: Optional[str]
     last_annual_date: Optional[str]
     status: str
+    priority: int = 99  # Default priority for assets not in priority lists
 
 @dataclass
 class CompletionRecord:
@@ -364,21 +365,25 @@ class PMEligibilityChecker:
 
 class PMAssignmentGenerator:
     """Responsible for generating PM assignments"""
-    
+
     def __init__(self, eligibility_checker: PMEligibilityChecker):
         self.eligibility_checker = eligibility_checker
-    
-    def generate_assignments(self, equipment_list: List[Equipment], 
+
+    def generate_assignments(self, equipment_list: List[Equipment],
                            week_start: datetime, max_assignments: int) -> List[PMAssignment]:
-        """Generate prioritized list of PM assignments"""
-        
+        """Generate prioritized list of PM assignments based on priority level and last completion date"""
+
         potential_assignments = []
-        
+        equipment_priority_map = {}  # Map to store equipment priority
+
         for equipment in equipment_list:
             # Skip inactive equipment
             if equipment.status not in ['Active']:
                 continue
-            
+
+            # Store equipment priority for later sorting
+            equipment_priority_map[equipment.bfm_no] = equipment.priority
+
             # Check Monthly PM eligibility
             if equipment.has_monthly:
                 monthly_result = self.eligibility_checker.check_eligibility(
@@ -392,15 +397,15 @@ class PMAssignmentGenerator:
                         monthly_result.priority_score,
                         monthly_result.reason
                     ))
-            
+
             # Check Annual PM eligibility (only if Monthly isn't being assigned)
             if equipment.has_annual:
                 # Don't assign both Monthly and Annual to same equipment in same week
                 has_monthly_assignment = any(
-                    a.bfm_no == equipment.bfm_no and a.pm_type == PMType.MONTHLY 
+                    a.bfm_no == equipment.bfm_no and a.pm_type == PMType.MONTHLY
                     for a in potential_assignments
                 )
-                
+
                 if not has_monthly_assignment:
                     annual_result = self.eligibility_checker.check_eligibility(
                         equipment, PMType.ANNUAL, week_start
@@ -413,23 +418,70 @@ class PMAssignmentGenerator:
                             annual_result.priority_score,
                             annual_result.reason
                         ))
-        
-        # Sort by priority (highest first) and return top assignments
-        potential_assignments.sort(key=lambda x: x.priority_score, reverse=True)
+
+        # Sort by priority level first (P1, P2, P3, then others), then by priority_score (days overdue)
+        # Priority level: 1 (P1) comes first, then 2 (P2), then 3 (P3), then 99 (others)
+        # Within each priority level, sort by priority_score (higher = more overdue)
+        potential_assignments.sort(
+            key=lambda x: (
+                equipment_priority_map.get(x.bfm_no, 99),  # Sort by priority level (1, 2, 3, 99)
+                -x.priority_score  # Then by priority score (negative for descending order)
+            )
+        )
+
         return potential_assignments[:max_assignments]
 
 class PMSchedulingService:
     """Main orchestrator class"""
-    
+
     def __init__(self, conn, technicians: List[str]):
         self.conn = conn
         self.technicians = technicians
-        
+
         # Initialize components
         self.date_parser = DateParser(conn)
         self.completion_repo = CompletionRecordRepository(conn)
         self.eligibility_checker = PMEligibilityChecker(self.date_parser, self.completion_repo)
         self.assignment_generator = PMAssignmentGenerator(self.eligibility_checker)
+
+        # Load priority assets from CSV files
+        self.priority_map = self._load_priority_assets()
+
+    def _load_priority_assets(self) -> Dict[str, int]:
+        """Load priority assets from CSV files and create a BFM -> Priority mapping"""
+        priority_map = {}
+
+        # Define priority CSV files and their priority levels
+        priority_files = [
+            ('PM_LIST_A220_1.csv', 1),  # P1 assets
+            ('PM_LIST_A220_2.csv', 2),  # P2 assets
+            ('PM_LIST_A220_3.csv', 3),  # P3 assets
+        ]
+
+        for filename, priority in priority_files:
+            filepath = os.path.join(os.path.dirname(__file__), filename)
+            if os.path.exists(filepath):
+                try:
+                    # Read CSV file
+                    df = pd.read_csv(filepath, encoding='utf-8-sig')
+
+                    # Check if BFM column exists
+                    if 'BFM' in df.columns:
+                        # Map each BFM number to its priority
+                        for bfm in df['BFM'].dropna().unique():
+                            bfm_str = str(int(bfm)) if pd.notna(bfm) else None
+                            if bfm_str:
+                                priority_map[bfm_str] = priority
+                        print(f"Loaded {len(df['BFM'].dropna().unique())} priority {priority} assets from {filename}")
+                    else:
+                        print(f"Warning: BFM column not found in {filename}")
+                except Exception as e:
+                    print(f"Error loading {filename}: {str(e)}")
+            else:
+                print(f"Warning: Priority file {filename} not found at {filepath}")
+
+        print(f"Total priority assets loaded: {len(priority_map)}")
+        return priority_map
     
     def generate_weekly_schedule(self, week_start_str: str, weekly_pm_target: int) -> Dict:
         """Generate weekly PM schedule with comprehensive validation"""
@@ -521,19 +573,24 @@ class PMSchedulingService:
             )
             ORDER BY bfm_equipment_no
         ''')
-    
+
         equipment_list = []
         for row in cursor.fetchall():
+            bfm_no = row[0]
+            # Get priority from priority_map, default to 99 if not found
+            priority = self.priority_map.get(str(bfm_no), 99)
+
             equipment_list.append(Equipment(
-                bfm_no=row[0],
+                bfm_no=bfm_no,
                 description=row[1],
                 has_monthly=bool(row[2]),
                 has_annual=bool(row[3]),
                 last_monthly_date=row[4],
                 last_annual_date=row[5],
-                status=row[6]
+                status=row[6],
+                priority=priority
             ))
-    
+
         return equipment_list
     
     def _assign_and_save(self, assignments: List[PMAssignment], week_start: datetime, week_start_str: str):
@@ -6632,13 +6689,8 @@ class AITCMMSSystem:
                   command=self.generate_weekly_assignments).grid(row=0, column=2, padx=5)
         ttk.Button(controls_frame, text="Print PM Forms", 
                   command=self.print_weekly_pm_forms).grid(row=0, column=3, padx=5)
-        ttk.Button(controls_frame, text="Export Schedule", 
+        ttk.Button(controls_frame, text="Export Schedule",
                   command=self.export_weekly_schedule).grid(row=0, column=4, padx=5)
-        # Add this line after your existing buttons in the controls_frame section:
-        ttk.Button(controls_frame, text="WARNING: Validate Before Scheduling", 
-                  command=self.generate_weekly_assignments).grid(row=0, column=5, padx=5)
-        ttk.Button(controls_frame, text="WARNING: Analyze PM Capacity", 
-                  command=self.analyze_pm_capacity).grid(row=0, column=7, padx=5)
         
         # Schedule display
         schedule_frame = ttk.LabelFrame(self.pm_schedule_frame, text="Weekly PM Schedule", padding=10)
