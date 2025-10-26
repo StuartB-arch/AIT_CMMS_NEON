@@ -230,8 +230,8 @@ class UserManager:
         if not user:
             return None
 
-        # Convert to dict if it's a tuple
-        if isinstance(user, tuple):
+        # Convert to dict if it's a tuple or list
+        if isinstance(user, (tuple, list)):
             user = {
                 'id': user[0],
                 'username': user[1],
