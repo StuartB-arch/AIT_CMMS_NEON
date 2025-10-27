@@ -6733,12 +6733,23 @@ class AITCMMSSystem:
         # Search frame
         search_frame = ttk.Frame(self.equipment_frame)
         search_frame.pack(fill='x', padx=10, pady=5)
-        
+
         ttk.Label(search_frame, text="Search Equipment:").pack(side='left', padx=5)
         self.equipment_search_var = tk.StringVar()
         self.equipment_search_var.trace('w', self.filter_equipment_list)
         search_entry = ttk.Entry(search_frame, textvariable=self.equipment_search_var, width=30)
         search_entry.pack(side='left', padx=5)
+
+        # Location filter
+        ttk.Label(search_frame, text="Filter by Location:").pack(side='left', padx=(20, 5))
+        self.equipment_location_var = tk.StringVar(value="All Locations")
+        self.equipment_location_combo = ttk.Combobox(search_frame, textvariable=self.equipment_location_var, width=25, state='readonly')
+        self.equipment_location_combo.pack(side='left', padx=5)
+        self.equipment_location_combo.bind('<<ComboboxSelected>>', self.filter_equipment_list)
+
+        # Clear filters button
+        ttk.Button(search_frame, text="Clear Filters",
+                  command=self.clear_equipment_filters).pack(side='left', padx=5)
         
         # Equipment list
         list_frame = ttk.Frame(self.equipment_frame)
@@ -6845,31 +6856,31 @@ class AITCMMSSystem:
         try:
             cursor = self.conn.cursor()
 
-            # Combine all statistics queries into one for better performance
-            cursor.execute('''
-                SELECT
-                    (SELECT COUNT(*) FROM equipment) as total_assets,
-                    (SELECT COUNT(*) FROM equipment WHERE status = 'Active' OR status IS NULL) as active_assets,
-                    (SELECT COUNT(DISTINCT bfm_equipment_no) FROM cannot_find_assets WHERE status = 'Missing') as cannot_find_count,
-                    (SELECT COUNT(*) FROM equipment WHERE status = 'Run to Failure') as rtf_count,
-                    (SELECT COUNT(DISTINCT bfm_equipment_no) FROM run_to_failure_assets) as rtf_assets_count
-            ''')
+            # Get total assets count
+            cursor.execute('SELECT COUNT(*) FROM equipment')
+            total_assets = cursor.fetchone()[0]
 
-            result = cursor.fetchone()
-            total_assets, active_assets, cannot_find_count, rtf_count, rtf_assets_count = result
+            # Get Cannot Find count from cannot_find_assets table
+            cursor.execute('SELECT COUNT(DISTINCT bfm_equipment_no) FROM cannot_find_assets WHERE status = %s', ('Missing',))
+            cannot_find_count = cursor.fetchone()[0]
 
-            # Use the higher count for RTF
-            rtf_total = max(rtf_count, rtf_assets_count)
-        
+            # Get Run to Failure count from equipment table
+            cursor.execute('SELECT COUNT(*) FROM equipment WHERE status = %s', ('Run to Failure',))
+            rtf_count = cursor.fetchone()[0]
+
+            # Active assets = Total - Cannot Find - Run to Failure
+            # This ensures the numbers add up correctly
+            active_assets = total_assets - cannot_find_count - rtf_count
+
             # Update labels
             self.stats_total_label.config(text=f"Total Assets: {total_assets}")
             self.stats_active_label.config(text=f"Active Assets: {active_assets}")
             self.stats_cf_label.config(text=f"Cannot Find: {cannot_find_count}")
-            self.stats_rtf_label.config(text=f"Run to Failure: {rtf_total}")
-        
+            self.stats_rtf_label.config(text=f"Run to Failure: {rtf_count}")
+
             # Update status bar
-            self.update_status(f"Equipment stats updated - Total: {total_assets}, Active: {active_assets}, CF: {cannot_find_count}, RTF: {rtf_total}")
-        
+            self.update_status(f"Equipment stats updated - Total: {total_assets}, Active: {active_assets}, CF: {cannot_find_count}, RTF: {rtf_count}")
+
         except Exception as e:
             print(f"Error updating equipment statistics: {e}")
             messagebox.showerror("Error", f"Failed to update equipment statistics: {str(e)}")
@@ -13504,7 +13515,10 @@ class AITCMMSSystem:
         
             # Update statistics
             self.update_equipment_statistics()
-        
+
+            # Update location filter dropdown
+            self.populate_location_filter()
+
             # Update status
             self.update_status(f"Equipment list refreshed - {len(self.equipment_data)} items")
         
@@ -13513,38 +13527,72 @@ class AITCMMSSystem:
             messagebox.showerror("Error", f"Failed to refresh equipment list: {str(e)}")
     
     def filter_equipment_list(self, *args):
-        """Filter equipment list based on search term"""
+        """Filter equipment list based on search term and location"""
         search_term = self.equipment_search_var.get().lower()
-        
+        selected_location = self.equipment_location_var.get()
+
         # Clear existing items
         for item in self.equipment_tree.get_children():
             self.equipment_tree.delete(item)
-        
+
         # Add filtered equipment
         for equipment in self.equipment_data:
             if len(equipment) >= 9:
+                equipment_location = equipment[5] or ''
+
+                # Check location filter
+                location_match = (selected_location == "All Locations" or
+                                equipment_location == selected_location)
+
+                if not location_match:
+                    continue
+
                 # Check if search term matches any field
                 searchable_fields = [
                     equipment[1] or '',  # SAP
                     equipment[2] or '',  # BFM
                     equipment[3] or '',  # Description
-                    equipment[5] or '',  # Location
+                    equipment_location,  # Location
                     equipment[6] or ''   # Master LIN
                 ]
-                
+
                 if not search_term or any(search_term in field.lower() for field in searchable_fields):
                     self.equipment_tree.insert('', 'end', values=(
                         equipment[1] or '',  # SAP
                         equipment[2] or '',  # BFM
                         equipment[3] or '',  # Description
-                        equipment[5] or '',  # Location
+                        equipment_location,  # Location
                         equipment[6] or '',  # Master LIN
                         'Yes' if equipment[7] else 'No',  # Monthly PM
                         'Yes' if equipment[8] else 'No',  # Six Month PM
                         'Yes' if equipment[9] else 'No',  # Annual PM
                         equipment[16] or 'Active'  # Status
                     ))
-    
+
+    def populate_location_filter(self):
+        """Populate location filter dropdown with distinct locations from database"""
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute('SELECT DISTINCT location FROM equipment WHERE location IS NOT NULL AND location != \'\' ORDER BY location')
+            locations = [row[0] for row in cursor.fetchall()]
+
+            # Add "All Locations" as the first option
+            location_values = ["All Locations"] + locations
+            self.equipment_location_combo['values'] = location_values
+
+            # Set default to "All Locations"
+            if self.equipment_location_var.get() not in location_values:
+                self.equipment_location_var.set("All Locations")
+
+        except Exception as e:
+            print(f"Error populating location filter: {e}")
+
+    def clear_equipment_filters(self):
+        """Clear all equipment filters and show all equipment"""
+        self.equipment_search_var.set('')
+        self.equipment_location_var.set("All Locations")
+        self.filter_equipment_list()
+
     def export_equipment_list(self):
         """Export equipment list to CSV"""
         try:
