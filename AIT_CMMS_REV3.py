@@ -3112,23 +3112,10 @@ class AITCMMSSystem:
             messagebox.showerror("Restore Error", f"Failed to restore database backup:\n\n{str(e)}")
             print(f"Database restore error: {e}")
 
-    def add_database_restore_button(self):
-        """Add database restore button to the equipment tab"""
-        try:
-            if hasattr(self, 'equipment_frame'):
-                 #Find the controls frame and add the button
-                for widget in self.equipment_frame.winfo_children():
-                    if isinstance(widget, ttk.LabelFrame) and "Equipment Controls" in widget['text']:
-                        ttk.Button(widget, text="WARNING: Restore Database from Backup", 
-                                 command=self.create_database_restore_dialog,
-                                 width=30).pack(side='left', padx=5)
-                        break
-        except Exception as e:
-            print(f"Error adding restore button: {e}")
-    
-    
-    
-    
+
+
+
+
     
     def add_logo_to_main_window(self):
         """Add AIT logo to the main application window - LEFT SIDE ONLY"""
@@ -4711,10 +4698,6 @@ class AITCMMSSystem:
         # Create GUI based on user role
         self.create_gui()
 
-
-        # Add database restore button before loading data
-        if self.current_user_role == 'Manager':
-            self.add_database_restore_button()
 
         # Defer initial data loading to keep UI responsive at startup
         # This prevents the app from freezing during initialization
