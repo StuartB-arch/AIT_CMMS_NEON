@@ -1518,14 +1518,14 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
     
         # Get summary data
         cursor.execute('''
-            SELECT 
+            SELECT
                 COUNT(*) as total_completions,
                 SUM(labor_hours + labor_minutes/60.0) as total_hours,
                 AVG(labor_hours + labor_minutes/60.0) as avg_hours
-            FROM pm_completions 
-            WHERE strftime('%Y', completion_date) = %s 
-            AND strftime('%m', completion_date) = %s 
-        ''', (str(year), f"{month:02d}"))
+            FROM pm_completions
+            WHERE EXTRACT(YEAR FROM completion_date::date) = %s
+            AND EXTRACT(MONTH FROM completion_date::date) = %s
+        ''', (year, month))
     
         pm_results = cursor.fetchone()
         pm_completions = pm_results[0] or 0
