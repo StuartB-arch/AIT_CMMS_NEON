@@ -1061,14 +1061,20 @@ def generate_monthly_summary_report(conn, month=None, year=None):
     """
     Generate a comprehensive monthly PM summary report with separate tracking
     for PM Completions, Cannot Find, Run to Failure entries, and CM statistics
-    
+
     Args:
         conn: Database connection
         month: Month number (1-12), defaults to current month
         year: Year (YYYY), defaults to current year
     """
+    try:
+        # Rollback any failed transaction before starting
+        conn.rollback()
+    except Exception:
+        pass  # Ignore if there's no transaction to rollback
+
     cursor = conn.cursor()
-    
+
     # Use current month/year if not specified
     if month is None or year is None:
         now = datetime.now()
@@ -1424,7 +1430,13 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
         from reportlab.lib.units import inch
         from reportlab.lib import colors
         from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
-        
+
+        try:
+            # Rollback any failed transaction before starting
+            conn.rollback()
+        except Exception:
+            pass  # Ignore if there's no transaction to rollback
+
         cursor = conn.cursor()
         
         # Use current month/year if not specified
@@ -10111,9 +10123,12 @@ class AITCMMSSystem:
     def generate_monthly_report(self):
         """Generate monthly PM performance report"""
         try:
+            # Rollback any failed transaction before starting
+            self.conn.rollback()
+
             current_date = datetime.now()
             month_start = current_date.replace(day=1)
-            
+
             cursor = self.conn.cursor()
             
             # Get monthly statistics from weekly reports
@@ -13010,10 +13025,13 @@ class AITCMMSSystem:
         
         def save_equipment():
             try:
+                # Rollback any failed transaction before starting
+                self.conn.rollback()
+
                 cursor = self.conn.cursor()
                 cursor.execute('''
-                    INSERT INTO equipment 
-                    (sap_material_no, bfm_equipment_no, description, tool_id_drawing_no, 
+                    INSERT INTO equipment
+                    (sap_material_no, bfm_equipment_no, description, tool_id_drawing_no,
                      location, master_lin, monthly_pm, six_month_pm, annual_pm)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ''', (
@@ -13032,6 +13050,7 @@ class AITCMMSSystem:
                 dialog.destroy()
                 self.refresh_equipment_list()
             except Exception as e:
+                self.conn.rollback()
                 messagebox.showerror("Error", f"Failed to add equipment: {str(e)}")
         
         # Buttons
@@ -13053,12 +13072,20 @@ class AITCMMSSystem:
         bfm_no = str(item['values'][1])  # BFM Equipment No.
 
         # Fetch full equipment data
-        cursor = self.conn.cursor()
-        cursor.execute('SELECT * FROM equipment WHERE bfm_equipment_no = %s', (bfm_no,))
-        equipment_data = cursor.fetchone()
+        try:
+            # Rollback any failed transaction before starting
+            self.conn.rollback()
 
-        if not equipment_data:
-            messagebox.showerror("Error", "Equipment not found in database")
+            cursor = self.conn.cursor()
+            cursor.execute('SELECT * FROM equipment WHERE bfm_equipment_no = %s', (bfm_no,))
+            equipment_data = cursor.fetchone()
+
+            if not equipment_data:
+                messagebox.showerror("Error", "Equipment not found in database")
+                return
+        except Exception as e:
+            self.conn.rollback()
+            messagebox.showerror("Error", f"Database error: {str(e)}")
             return
 
         # Create edit dialog
@@ -13217,8 +13244,11 @@ class AITCMMSSystem:
         def update_equipment():
             """Update equipment in database with Cannot Find support"""
             try:
+                # Rollback any failed transaction before starting
+                self.conn.rollback()
+
                 cursor = self.conn.cursor()
-            
+
                 # Determine new status
                 if run_to_failure_var.get():
                     new_status = 'Run to Failure'
@@ -13343,6 +13373,7 @@ class AITCMMSSystem:
                     self.update_status(f"Equipment {bfm_no} reactivated")
             
             except Exception as e:
+                self.conn.rollback()
                 messagebox.showerror("Error", f"Failed to update equipment: {str(e)}")
 
         # Buttons
@@ -13685,10 +13716,14 @@ class AITCMMSSystem:
     def load_equipment_data(self):
         """Load equipment data from database"""
         try:
+            # Rollback any failed transaction before starting
+            self.conn.rollback()
+
             cursor = self.conn.cursor()
             cursor.execute('SELECT * FROM equipment ORDER BY bfm_equipment_no')
             self.equipment_data = cursor.fetchall()
         except Exception as e:
+            self.conn.rollback()
             print(f"Error loading equipment data: {e}")
             self.equipment_data = []
     
