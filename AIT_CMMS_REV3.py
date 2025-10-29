@@ -13910,6 +13910,57 @@ class AITCMMSSystem:
                     story.append(Paragraph("AIT - BUILDING THE FUTURE OF AEROSPACE", company_style))
                     story.append(Spacer(1, 15))
 
+            # =================== FETCH CUSTOM PM TEMPLATE ===================
+            # Retrieve custom template data BEFORE building the equipment table
+                checklist_items = []
+                estimated_hours = 1.0
+                special_instructions = None
+                safety_notes = None
+
+                cursor = self.conn.cursor()
+                cursor.execute('''
+                    SELECT checklist_items, estimated_hours, special_instructions, safety_notes
+                    FROM pm_templates
+                    WHERE bfm_equipment_no = %s AND pm_type = %s
+                    ORDER BY updated_date DESC LIMIT 1
+                ''', (bfm_no, pm_type))
+
+                template_result = cursor.fetchone()
+
+                if template_result and template_result[0]:
+                    try:
+                        checklist_items = json.loads(template_result[0])
+                        estimated_hours = template_result[1] or 1.0
+                        special_instructions = template_result[2]
+                        safety_notes = template_result[3]
+                        print(f"DEBUG: Using custom template for {bfm_no} - {pm_type} with {len(checklist_items)} items, {estimated_hours}h estimated")
+                    except Exception as e:
+                        print(f"DEBUG: Error loading custom template: {e}")
+                        checklist_items = []
+
+                # Use default checklist if no custom template
+                if not checklist_items:
+                    print(f"DEBUG: No custom template found for {bfm_no} - {pm_type}, using default checklist")
+                    checklist_items = [
+                        "Special Equipment Used (List):",
+                        "Validate your maintenance with Date / Stamp / Hours",
+                        "Refer to drawing when performing maintenance",
+                        "Make sure all instruments are properly calibrated",
+                        "Make sure tool is properly identified",
+                        "Make sure all mobile mechanisms move fluidly",
+                        "Visually inspect the welds",
+                        "Take note of any anomaly or defect (create a CM if needed)",
+                        "Check all screws. Tighten if needed.",
+                        "Check the pins for wear",
+                        "Make sure all tooling is secured to the equipment with cable",
+                        "Ensure all tags (BFM and SAP) are applied and securely fastened",
+                        "All documentation are picked up from work area",
+                        "All parts and tools have been picked up",
+                        "Workspace has been cleaned up",
+                        "Dry runs have been performed (tests, restarts, etc.)",
+                        "Ensure that AIT Sticker is applied"
+                    ]
+
             # =================== EQUIPMENT INFORMATION TABLE ===================
                 equipment_data = [
                     [
@@ -13937,9 +13988,9 @@ class AITCMMSSystem:
                         Paragraph(str(pm_type), cell_style)
                     ],
                     [
-                        Paragraph('Estimated Hours:', header_cell_style), 
-                        Paragraph('1.0h', cell_style), 
-                        Paragraph('Date of PM Completion:', header_cell_style), 
+                        Paragraph('Estimated Hours:', header_cell_style),
+                        Paragraph(f'{estimated_hours:.1f}h', cell_style),
+                        Paragraph('Date of PM Completion:', header_cell_style),
                         Paragraph('', cell_style)
                     ],
                     [
@@ -13978,45 +14029,6 @@ class AITCMMSSystem:
                 story.append(Spacer(1, 15))
 
             # =================== PM CHECKLIST TABLE ===================
-            # Try to get custom template checklist
-                checklist_items = []
-                cursor = self.conn.cursor()
-                cursor.execute('''
-                    SELECT checklist_items FROM pm_templates 
-                    WHERE bfm_equipment_no = %s AND pm_type = %s
-                ''', (bfm_no, pm_type))
-            
-                template_result = cursor.fetchone()
-            
-                if template_result and template_result[0]:
-                    try:
-                        checklist_items = json.loads(template_result[0])
-                        print(f"DEBUG: Using custom template with {len(checklist_items)} items")
-                    except:
-                        checklist_items = []
-            
-                # Use default checklist if no custom template
-                if not checklist_items:
-                    checklist_items = [
-                        "Special Equipment Used (List):",
-                        "Validate your maintenance with Date / Stamp / Hours",
-                        "Refer to drawing when performing maintenance",
-                        "Make sure all instruments are properly calibrated",
-                        "Make sure tool is properly identified",
-                        "Make sure all mobile mechanisms move fluidly",
-                        "Visually inspect the welds",
-                        "Take note of any anomaly or defect (create a CM if needed)",
-                        "Check all screws. Tighten if needed.",
-                        "Check the pins for wear",
-                        "Make sure all tooling is secured to the equipment with cable",
-                        "Ensure all tags (BFM and SAP) are applied and securely fastened",
-                        "All documentation are picked up from work area",
-                        "All parts and tools have been picked up",
-                        "Workspace has been cleaned up",
-                        "Dry runs have been performed (tests, restarts, etc.)",
-                        "Ensure that AIT Sticker is applied"
-                    ]
-
                 checklist_data = [
                     [
                         Paragraph('', header_cell_style), 
@@ -14052,6 +14064,50 @@ class AITCMMSSystem:
         
                 story.append(checklist_table)
                 story.append(Spacer(1, 15))
+
+            # =================== SPECIAL INSTRUCTIONS & SAFETY NOTES ===================
+            # Add special instructions from custom template if available
+                if special_instructions and special_instructions.strip():
+                    instructions_style = ParagraphStyle(
+                        'InstructionsStyle',
+                        parent=styles['Normal'],
+                        fontSize=9,
+                        leading=11,
+                        textColor=colors.darkblue,
+                        fontName='Helvetica-Bold'
+                    )
+                    content_style = ParagraphStyle(
+                        'ContentStyle',
+                        parent=styles['Normal'],
+                        fontSize=8,
+                        leading=10
+                    )
+
+                    story.append(Paragraph("SPECIAL INSTRUCTIONS:", instructions_style))
+                    story.append(Paragraph(special_instructions, content_style))
+                    story.append(Spacer(1, 10))
+
+            # Add safety notes from custom template if available
+                if safety_notes and safety_notes.strip():
+                    safety_style = ParagraphStyle(
+                        'SafetyStyle',
+                        parent=styles['Normal'],
+                        fontSize=9,
+                        leading=11,
+                        textColor=colors.red,
+                        fontName='Helvetica-Bold'
+                    )
+                    safety_content_style = ParagraphStyle(
+                        'SafetyContentStyle',
+                        parent=styles['Normal'],
+                        fontSize=8,
+                        leading=10,
+                        textColor=colors.black
+                    )
+
+                    story.append(Paragraph("SAFETY NOTES:", safety_style))
+                    story.append(Paragraph(safety_notes, safety_content_style))
+                    story.append(Spacer(1, 10))
 
             # =================== COMPLETION INFORMATION TABLE ===================
                 completion_data = [
