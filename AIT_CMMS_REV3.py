@@ -7636,7 +7636,10 @@ class AITCMMSSystem:
         """Generate and export PM completion PDF document"""
         try:
             cursor = self.conn.cursor()
-        
+
+            # Ensure bfm_no is a string to match database column type
+            bfm_no = str(bfm_no)
+
             # Get full completion details
             cursor.execute('''
                 SELECT pc.*, e.sap_material_no, e.description, e.location
