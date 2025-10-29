@@ -7648,7 +7648,13 @@ class AITCMMSSystem:
         """Generate and export PM completion PDF document"""
         try:
             cursor = self.conn.cursor()
-        
+
+            # Ensure all values are strings to avoid type mismatch errors
+            completion_date_str = str(completion_date) if completion_date is not None else ''
+            bfm_no_str = str(bfm_no) if bfm_no is not None else ''
+            pm_type_str = str(pm_type) if pm_type is not None else ''
+            technician_str = str(technician) if technician is not None else ''
+
             # Get full completion details
             cursor.execute('''
                 SELECT pc.*, e.sap_material_no, e.description, e.location
@@ -7656,7 +7662,7 @@ class AITCMMSSystem:
                 LEFT JOIN equipment e ON pc.bfm_equipment_no = e.bfm_equipment_no
                 WHERE pc.completion_date = %s AND pc.bfm_equipment_no = %s
                 AND pc.pm_type = %s AND pc.technician_name = %s
-            ''', (completion_date, bfm_no, pm_type, technician))
+            ''', (completion_date_str, bfm_no_str, pm_type_str, technician_str))
         
             completion_data = cursor.fetchone()
         
