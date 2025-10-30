@@ -3600,34 +3600,65 @@ class AITCMMSSystem:
         item = self.templates_tree.item(selected[0])
         bfm_no = str(item['values'][0])
         template_name = item['values'][1]
+        pm_type = item['values'][2]
 
-        # Fetch full template data
         cursor = self.conn.cursor()
-        cursor.execute('''
-            SELECT id, bfm_equipment_no, template_name, pm_type, checklist_items,
-                special_instructions, safety_notes, estimated_hours
-            FROM pm_templates
-            WHERE bfm_equipment_no = %s AND template_name = %s
-        ''', (bfm_no, template_name))
 
-        template_data = cursor.fetchone()
-        if not template_data:
-            messagebox.showerror("Error", "Template not found")
-            return
+        # Check if this is a default template
+        is_default = template_name.startswith("[Default]")
 
-        # Extract template data
-        (template_id, orig_bfm_no, orig_name, orig_pm_type, orig_checklist_json, 
-        orig_instructions, orig_safety, orig_hours) = template_data
+        if is_default:
+            # Creating custom template from default
+            template_id = None
+            orig_bfm_no = bfm_no
+            orig_name = f"Custom {pm_type} PM"
+            orig_pm_type = pm_type
+            orig_instructions = ""
+            orig_safety = ""
 
-        # Parse checklist items
-        try:
-            orig_checklist_items = json.loads(orig_checklist_json) if orig_checklist_json else []
-        except:
-            orig_checklist_items = []
+            # Get default estimated hours
+            est_hours_map = {'Monthly': 1.0, 'Six Month': 2.0, 'Annual': 4.0}
+            orig_hours = est_hours_map.get(pm_type, 1.0)
+
+            # Get default checklist items
+            cursor.execute('''
+                SELECT description
+                FROM default_pm_checklist
+                WHERE is_active = TRUE
+                ORDER BY step_number
+            ''')
+            orig_checklist_items = [row[0] for row in cursor.fetchall()]
+
+        else:
+            # Editing existing custom template
+            cursor.execute('''
+                SELECT id, bfm_equipment_no, template_name, pm_type, checklist_items,
+                    special_instructions, safety_notes, estimated_hours
+                FROM pm_templates
+                WHERE bfm_equipment_no = %s AND template_name = %s
+            ''', (bfm_no, template_name))
+
+            template_data = cursor.fetchone()
+            if not template_data:
+                messagebox.showerror("Error", "Template not found")
+                return
+
+            # Extract template data
+            (template_id, orig_bfm_no, orig_name, orig_pm_type, orig_checklist_json,
+            orig_instructions, orig_safety, orig_hours) = template_data
+
+            # Parse checklist items
+            try:
+                orig_checklist_items = json.loads(orig_checklist_json) if orig_checklist_json else []
+            except:
+                orig_checklist_items = []
 
         # Create edit dialog (similar structure to create dialog)
         dialog = tk.Toplevel(self.root)
-        dialog.title(f"Edit PM Template - {template_name}")
+        if is_default:
+            dialog.title(f"Create Custom Template from Default - {bfm_no}")
+        else:
+            dialog.title(f"Edit PM Template - {template_name}")
         dialog.geometry("800x750")
         dialog.transient(self.root)
         dialog.grab_set()
@@ -3645,14 +3676,20 @@ class AITCMMSSystem:
         # Template name (editable)
         ttk.Label(header_frame, text="Template Name:").grid(row=0, column=2, sticky='w', pady=5, padx=(20,5))
         template_name_var = tk.StringVar(value=orig_name)
-        ttk.Entry(header_frame, textvariable=template_name_var, width=25).grid(row=0, column=3, sticky='w', padx=5, pady=5)
+        template_name_entry = ttk.Entry(header_frame, textvariable=template_name_var, width=25)
+        template_name_entry.grid(row=0, column=3, sticky='w', padx=5, pady=5)
 
-        # PM Type (editable)
+        # PM Type (read-only for defaults, editable for custom)
         ttk.Label(header_frame, text="PM Type:").grid(row=1, column=0, sticky='w', pady=5)
         pm_type_var = tk.StringVar(value=orig_pm_type)
-        pm_type_combo = ttk.Combobox(header_frame, textvariable=pm_type_var, 
-                                values=['Monthly', 'Six Month', 'Annual'], width=22)
-        pm_type_combo.grid(row=1, column=1, sticky='w', padx=5, pady=5)
+        if is_default:
+            # PM Type should be read-only for default templates
+            pm_type_label = ttk.Label(header_frame, text=orig_pm_type, font=('Arial', 10))
+            pm_type_label.grid(row=1, column=1, sticky='w', padx=5, pady=5)
+        else:
+            pm_type_combo = ttk.Combobox(header_frame, textvariable=pm_type_var,
+                                    values=['Monthly', 'Six Month', 'Annual'], width=22)
+            pm_type_combo.grid(row=1, column=1, sticky='w', padx=5, pady=5)
 
         # Estimated hours (editable)
         ttk.Label(header_frame, text="Estimated Hours:").grid(row=1, column=2, sticky='w', pady=5, padx=(20,5))
@@ -3773,35 +3810,57 @@ class AITCMMSSystem:
                     messagebox.showerror("Error", "Please add at least one checklist item")
                     return
 
-                # Update database
                 cursor = self.conn.cursor()
-                cursor.execute('''
-                    UPDATE pm_templates SET
-                    template_name = %s,
-                    pm_type = %s,
-                    checklist_items = %s,
-                    special_instructions = %s,
-                    safety_notes = %s,
-                    estimated_hours = %s,
-                    updated_date = CURRENT_TIMESTAMP
-                    WHERE id = %s
-                ''', (
-                    template_name_var.get().strip(),
-                    pm_type_var.get(),
-                    json.dumps(checklist_items),
-                    special_instructions_text.get('1.0', 'end-1c'),
-                    safety_notes_text.get('1.0', 'end-1c'),
-                    float(est_hours_var.get() or 1.0),
-                    template_id
-                ))
 
-                self.conn.commit()
-                messagebox.showinfo("Success", "PM template updated successfully!")
+                if is_default or template_id is None:
+                    # Create new custom template
+                    cursor.execute('''
+                        INSERT INTO pm_templates
+                        (bfm_equipment_no, template_name, pm_type, checklist_items,
+                        special_instructions, safety_notes, estimated_hours)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    ''', (
+                        orig_bfm_no,
+                        template_name_var.get().strip(),
+                        pm_type_var.get(),
+                        json.dumps(checklist_items),
+                        special_instructions_text.get('1.0', 'end-1c'),
+                        safety_notes_text.get('1.0', 'end-1c'),
+                        float(est_hours_var.get() or 1.0)
+                    ))
+
+                    self.conn.commit()
+                    messagebox.showinfo("Success", "Custom PM template created successfully!")
+                else:
+                    # Update existing custom template
+                    cursor.execute('''
+                        UPDATE pm_templates SET
+                        template_name = %s,
+                        pm_type = %s,
+                        checklist_items = %s,
+                        special_instructions = %s,
+                        safety_notes = %s,
+                        estimated_hours = %s,
+                        updated_date = CURRENT_TIMESTAMP
+                        WHERE id = %s
+                    ''', (
+                        template_name_var.get().strip(),
+                        pm_type_var.get(),
+                        json.dumps(checklist_items),
+                        special_instructions_text.get('1.0', 'end-1c'),
+                        safety_notes_text.get('1.0', 'end-1c'),
+                        float(est_hours_var.get() or 1.0),
+                        template_id
+                    ))
+
+                    self.conn.commit()
+                    messagebox.showinfo("Success", "PM template updated successfully!")
+
                 dialog.destroy()
                 self.load_pm_templates()
 
             except Exception as e:
-                messagebox.showerror("Error", f"Failed to update template: {str(e)}")
+                messagebox.showerror("Error", f"Failed to save template: {str(e)}")
 
         def on_step_select(event):
             selection = checklist_listbox.curselection()
@@ -3830,7 +3889,8 @@ class AITCMMSSystem:
         button_frame = ttk.Frame(dialog)
         button_frame.pack(side='bottom', fill='x', padx=10, pady=10)
 
-        ttk.Button(button_frame, text="Save Changes", command=save_changes).pack(side='left', padx=5)
+        button_text = "Create Custom Template" if is_default else "Save Changes"
+        ttk.Button(button_frame, text=button_text, command=save_changes).pack(side='left', padx=5)
         ttk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side='right', padx=5)
 
     def preview_pm_template(self):
@@ -5656,28 +5716,66 @@ class AITCMMSSystem:
             return
 
         try:
-            # Load templates for this equipment
             cursor = self.conn.cursor()
+
+            # Get equipment PM schedule info
+            cursor.execute('''
+                SELECT monthly_pm, six_month_pm, annual_pm
+                FROM equipment
+                WHERE bfm_equipment_no = %s
+            ''', (bfm_no,))
+
+            pm_info = cursor.fetchone()
+            if not pm_info:
+                messagebox.showerror("Error", f"Equipment {bfm_no} not found")
+                return
+
+            monthly_pm, six_month_pm, annual_pm = pm_info
+
+            # Get custom templates for this equipment
             cursor.execute('''
                 SELECT pt.bfm_equipment_no, pt.template_name, pt.pm_type,
                     pt.checklist_items, pt.estimated_hours, pt.updated_date
                 FROM pm_templates pt
                 WHERE pt.bfm_equipment_no = %s
-                ORDER BY pt.template_name
+                ORDER BY pt.pm_type, pt.template_name
             ''', (bfm_no,))
+
+            custom_templates = cursor.fetchall()
+            custom_pm_types = {template[2] for template in custom_templates}  # Set of PM types with custom templates
+
+            # Get default checklist count
+            cursor.execute('SELECT COUNT(*) FROM default_pm_checklist WHERE is_active = TRUE')
+            default_step_count = cursor.fetchone()[0]
 
             # Clear templates tree
             for item in self.templates_tree.get_children():
                 self.templates_tree.delete(item)
 
-            # Add templates for selected equipment
-            templates = cursor.fetchall()
-            if not templates:
-                messagebox.showinfo("No Templates",
-                    f"No PM templates found for equipment {bfm_no}")
-                return
+            template_count = 0
 
-            for template in templates:
+            # Add default templates for enabled PM types that don't have custom templates
+            pm_types_to_show = []
+            if monthly_pm and 'Monthly' not in custom_pm_types:
+                pm_types_to_show.append(('Monthly', 1.0))
+            if six_month_pm and 'Six Month' not in custom_pm_types:
+                pm_types_to_show.append(('Six Month', 2.0))
+            if annual_pm and 'Annual' not in custom_pm_types:
+                pm_types_to_show.append(('Annual', 4.0))
+
+            for pm_type, est_hours in pm_types_to_show:
+                self.templates_tree.insert('', 'end', values=(
+                    bfm_no,
+                    f"[Default] {pm_type} PM",
+                    pm_type,
+                    default_step_count,
+                    f"{est_hours:.1f}h",
+                    "Default"
+                ), tags=('default',))
+                template_count += 1
+
+            # Add custom templates
+            for template in custom_templates:
                 bfm, name, pm_type, checklist_json, est_hours, updated = template
 
                 # Count checklist items
@@ -5689,13 +5787,25 @@ class AITCMMSSystem:
 
                 self.templates_tree.insert('', 'end', values=(
                     bfm, name, pm_type, step_count,
-                    f"{est_hours:.1f}h",
+                    f"{est_hours:.1f}h" if est_hours else "0.0h",
                     str(updated)[:10] if updated else "N/A"
-                ))
+                ), tags=('custom',))
+                template_count += 1
 
-            # Update the label to show we're viewing templates for specific equipment
-            messagebox.showinfo("Templates Loaded",
-                f"Showing {len(templates)} PM template(s) for equipment {bfm_no}")
+            # Configure tag colors to distinguish default from custom
+            self.templates_tree.tag_configure('default', background='#E8F4F8')
+            self.templates_tree.tag_configure('custom', background='#F0FFF0')
+
+            if template_count == 0:
+                messagebox.showinfo("No Templates",
+                    f"Equipment {bfm_no} has no PM schedule enabled.\n"
+                    "Please configure Monthly, Six Month, or Annual PM in the Equipment tab.")
+            else:
+                messagebox.showinfo("Templates Loaded",
+                    f"Showing {template_count} template(s) for equipment {bfm_no}\n\n"
+                    "Light Blue = Default Template\n"
+                    "Light Green = Custom Template\n\n"
+                    "Select a template and click 'Preview' to view, 'Edit' to customize, or 'Export to PDF' to save.")
 
         except Exception as e:
             print(f"Error showing equipment PM templates: {e}")
@@ -5707,79 +5817,133 @@ class AITCMMSSystem:
         if not selected:
             messagebox.showwarning("Warning", "Please select a template to preview")
             return
-    
+
         item = self.templates_tree.item(selected[0])
         bfm_no = str(item['values'][0])
         template_name = item['values'][1]
+        pm_type = item['values'][2]
 
-        # Get template data
         cursor = self.conn.cursor()
-        cursor.execute('''
-            SELECT pt.*, e.description, e.sap_material_no, e.location
-            FROM pm_templates pt
-            LEFT JOIN equipment e ON pt.bfm_equipment_no = e.bfm_equipment_no
-            WHERE pt.bfm_equipment_no = %s AND pt.template_name = %s
-        ''', (bfm_no, template_name))
-    
-        template_data = cursor.fetchone()
-        if not template_data:
-            messagebox.showerror("Error", "Template not found")
-            return
-    
+
+        # Check if this is a default template
+        is_default = template_name.startswith("[Default]")
+
+        if is_default:
+            # Load default template
+            cursor.execute('''
+                SELECT description, sap_material_no, location
+                FROM equipment
+                WHERE bfm_equipment_no = %s
+            ''', (bfm_no,))
+
+            equip_data = cursor.fetchone()
+            if not equip_data:
+                messagebox.showerror("Error", "Equipment not found")
+                return
+
+            description, sap_no, location = equip_data
+
+            # Get default checklist
+            cursor.execute('''
+                SELECT description
+                FROM default_pm_checklist
+                WHERE is_active = TRUE
+                ORDER BY step_number
+            ''')
+            checklist_items = [row[0] for row in cursor.fetchall()]
+
+            # Estimate hours based on PM type
+            est_hours_map = {'Monthly': 1.0, 'Six Month': 2.0, 'Annual': 4.0}
+            est_hours = est_hours_map.get(pm_type, 1.0)
+
+            special_instructions = None
+            safety_notes = None
+
+        else:
+            # Load custom template
+            cursor.execute('''
+                SELECT pt.*, e.description, e.sap_material_no, e.location
+                FROM pm_templates pt
+                LEFT JOIN equipment e ON pt.bfm_equipment_no = e.bfm_equipment_no
+                WHERE pt.bfm_equipment_no = %s AND pt.template_name = %s
+            ''', (bfm_no, template_name))
+
+            template_data = cursor.fetchone()
+            if not template_data:
+                messagebox.showerror("Error", "Template not found")
+                return
+
+            # Parse custom template data
+            description = template_data[9] if len(template_data) > 9 else 'N/A'
+            sap_no = template_data[10] if len(template_data) > 10 else 'N/A'
+            location = template_data[11] if len(template_data) > 11 else 'N/A'
+
+            try:
+                checklist_items = json.loads(template_data[4]) if template_data[4] else []
+            except:
+                checklist_items = []
+
+            est_hours = template_data[7] if len(template_data) > 7 else 1.0
+            special_instructions = template_data[5] if len(template_data) > 5 else None
+            safety_notes = template_data[6] if len(template_data) > 6 else None
+
         # Create preview dialog
         preview_dialog = tk.Toplevel(self.root)
         preview_dialog.title(f"PM Template Preview - {bfm_no}")
         preview_dialog.geometry("700x600")
         preview_dialog.transient(self.root)
         preview_dialog.grab_set()
-    
+
         # Template info
         info_frame = ttk.LabelFrame(preview_dialog, text="Template Information", padding=10)
         info_frame.pack(fill='x', padx=10, pady=5)
-    
-        info_text = f"Equipment: {bfm_no} - {template_data[9] or 'N/A'}\n"
-        info_text += f"Template: {template_data[2]}\n"
-        info_text += f"PM Type: {template_data[3]}\n"
-        info_text += f"Estimated Hours: {template_data[7]:.1f}h"
-    
+
+        info_text = f"Equipment: {bfm_no} - {description or 'N/A'}\n"
+        info_text += f"SAP Material No: {sap_no or 'N/A'}\n"
+        info_text += f"Location: {location or 'N/A'}\n"
+        info_text += f"Template: {template_name}\n"
+        info_text += f"PM Type: {pm_type}\n"
+        info_text += f"Estimated Hours: {est_hours:.1f}h\n"
+        if is_default:
+            info_text += "\n[This is a default template - click 'Edit' to customize it]"
+
         ttk.Label(info_frame, text=info_text, font=('Arial', 10)).pack(anchor='w')
-    
+
         # Checklist preview
         checklist_frame = ttk.LabelFrame(preview_dialog, text="PM Checklist", padding=10)
         checklist_frame.pack(fill='both', expand=True, padx=10, pady=5)
-    
+
         checklist_text = tk.Text(checklist_frame, wrap='word', font=('Arial', 10))
         scrollbar = ttk.Scrollbar(checklist_frame, orient='vertical', command=checklist_text.yview)
         checklist_text.configure(yscrollcommand=scrollbar.set)
-    
+
         # Format checklist content
         try:
-            checklist_items = json.loads(template_data[4]) if template_data[4] else []
             content = "PM CHECKLIST:\n" + "="*50 + "\n\n"
-        
+
             for i, item in enumerate(checklist_items, 1):
                 content += f"{i:2d}. {item}\n"
-        
-            if template_data[5]:  # Special instructions
-                content += f"\n\nSPECIAL INSTRUCTIONS:\n{template_data[5]}\n"
-        
-            if template_data[6]:  # Safety notes
-                content += f"\n\nSAFETY NOTES:\n{template_data[6]}\n"
-        
+
+            if special_instructions:
+                content += f"\n\nSPECIAL INSTRUCTIONS:\n{special_instructions}\n"
+
+            if safety_notes:
+                content += f"\n\nSAFETY NOTES:\n{safety_notes}\n"
+
             checklist_text.insert('1.0', content)
             checklist_text.config(state='disabled')
-        
+
         except Exception as e:
             checklist_text.insert('1.0', f"Error loading template: {str(e)}")
             checklist_text.config(state='disabled')
-    
+
         checklist_text.pack(side='left', fill='both', expand=True)
         scrollbar.pack(side='right', fill='y')
-    
+
         # Buttons
         button_frame = ttk.Frame(preview_dialog)
         button_frame.pack(side='bottom', fill='x', padx=10, pady=10)
-    
+
         ttk.Button(button_frame, text="Close", command=preview_dialog.destroy).pack(side='right', padx=5)
 
     def delete_pm_template(self):
@@ -5793,6 +5957,14 @@ class AITCMMSSystem:
         bfm_no = str(item['values'][0])
         template_name = item['values'][1]
 
+        # Check if this is a default template
+        if template_name.startswith("[Default]"):
+            messagebox.showwarning("Cannot Delete Default Template",
+                                 "Default templates cannot be deleted.\n\n"
+                                 "To stop using a PM type for this equipment, "
+                                 "update the equipment's PM schedule in the Equipment tab.")
+            return
+
         result = messagebox.askyesno("Confirm Delete",
                                 f"Delete PM template '{template_name}' for {bfm_no}?\n\n"
                                 f"This action cannot be undone.")
@@ -5804,11 +5976,11 @@ class AITCMMSSystem:
                     DELETE FROM pm_templates
                     WHERE bfm_equipment_no = %s AND template_name = %s
                 ''', (bfm_no, template_name))
-            
+
                 self.conn.commit()
                 messagebox.showinfo("Success", "Template deleted successfully!")
                 self.load_pm_templates()
-            
+
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to delete template: {str(e)}")
 
