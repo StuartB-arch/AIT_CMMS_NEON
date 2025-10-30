@@ -3958,34 +3958,80 @@ class AITCMMSSystem:
         if not selected:
             messagebox.showwarning("Warning", "Please select a template to export")
             return
-    
+
         item = self.templates_tree.item(selected[0])
         bfm_no = str(item['values'][0]).strip()
         template_name = str(item['values'][1]).strip()
+        pm_type = item['values'][2]
 
-        # Get template and equipment data
         cursor = self.conn.cursor()
-        cursor.execute('''
-            SELECT pt.*, e.sap_material_no, e.description, e.tool_id_drawing_no, e.location
-            FROM pm_templates pt
-            LEFT JOIN equipment e ON pt.bfm_equipment_no = e.bfm_equipment_no
-            WHERE pt.bfm_equipment_no = %s AND pt.template_name = %s
-        ''', (bfm_no, template_name))
 
-        template_data = cursor.fetchone()
-        if not template_data:
-            messagebox.showerror("Error", f"Template not found for BFM: {bfm_no}, Name: {template_name}\n\nPlease check that the template exists in the database.")
-            return
-    
+        # Check if this is a default template
+        is_default = template_name.startswith("Default - ")
+
+        if is_default:
+            # Load default template data
+            cursor.execute('''
+                SELECT sap_material_no, description, tool_id_drawing_no, location
+                FROM equipment
+                WHERE bfm_equipment_no = %s
+            ''', (bfm_no,))
+            equipment_data = cursor.fetchone()
+
+            if not equipment_data:
+                messagebox.showerror("Error", "Equipment not found")
+                return
+
+            # Load default checklist items
+            cursor.execute('''
+                SELECT description
+                FROM default_pm_checklist
+                WHERE is_active = TRUE
+                ORDER BY step_number
+            ''')
+            checklist_rows = cursor.fetchall()
+            checklist_items = [row[0] for row in checklist_rows]
+
+            # Construct template_data tuple to match expected format
+            template_data = (
+                None,  # template_id
+                bfm_no,  # bfm_equipment_no
+                template_name,  # template_name
+                pm_type,  # pm_type
+                json.dumps(checklist_items),  # checklist_items (JSON)
+                None,  # special_instructions
+                None,  # safety_notes
+                2.0,  # estimated_hours
+                None,  # created_date
+                None,  # updated_date
+                equipment_data[0],  # sap_material_no
+                equipment_data[1],  # description
+                equipment_data[2],  # tool_id_drawing_no
+                equipment_data[3]   # location
+            )
+        else:
+            # Get template and equipment data
+            cursor.execute('''
+                SELECT pt.*, e.sap_material_no, e.description, e.tool_id_drawing_no, e.location
+                FROM pm_templates pt
+                LEFT JOIN equipment e ON pt.bfm_equipment_no = e.bfm_equipment_no
+                WHERE pt.bfm_equipment_no = %s AND pt.template_name = %s
+            ''', (bfm_no, template_name))
+
+            template_data = cursor.fetchone()
+            if not template_data:
+                messagebox.showerror("Error", f"Template not found for BFM: {bfm_no}, Name: {template_name}\n\nPlease check that the template exists in the database.")
+                return
+
         try:
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            filename = f"Custom_PM_Template_{bfm_no}_{template_name.replace(' ', '_')}_{timestamp}.pdf"
-        
+            filename = f"PM_Template_{bfm_no}_{template_name.replace(' ', '_')}_{timestamp}.pdf"
+
             # Create custom PDF using the template data
             self.create_custom_pm_template_pdf(filename, template_data)
-        
-            messagebox.showinfo("Success", f"Custom PM template exported to: {filename}")
-        
+
+            messagebox.showinfo("Success", f"PM template exported to: {filename}")
+
         except Exception as e:
             messagebox.showerror("Error", f"Failed to export template: {str(e)}")
 
@@ -5672,9 +5718,32 @@ class AITCMMSSystem:
 
             # Add templates for selected equipment
             templates = cursor.fetchall()
+
             if not templates:
-                messagebox.showinfo("No Templates",
-                    f"No PM templates found for equipment {bfm_no}")
+                # No custom templates - show default templates
+                cursor.execute('SELECT COUNT(*) FROM default_pm_checklist WHERE is_active = TRUE')
+                default_count = cursor.fetchone()[0]
+
+                if default_count > 0:
+                    # Create default template entries for each PM type
+                    pm_types = ['Monthly', 'Six Month', 'Annual']
+                    for pm_type in pm_types:
+                        self.templates_tree.insert('', 'end', values=(
+                            bfm_no,
+                            f"Default - {pm_type} PM",
+                            pm_type,
+                            default_count,
+                            "2.0h",
+                            "Default"
+                        ))
+
+                    messagebox.showinfo("Default Templates",
+                        f"Showing default PM templates for equipment {bfm_no}\n\n"
+                        f"These are standard templates. You can preview and customize them\n"
+                        f"by clicking 'Customize This Template' in the preview window.")
+                else:
+                    messagebox.showinfo("No Templates",
+                        f"No PM templates found for equipment {bfm_no}")
                 return
 
             for template in templates:
@@ -5695,7 +5764,7 @@ class AITCMMSSystem:
 
             # Update the label to show we're viewing templates for specific equipment
             messagebox.showinfo("Templates Loaded",
-                f"Showing {len(templates)} PM template(s) for equipment {bfm_no}")
+                f"Showing {len(templates)} custom PM template(s) for equipment {bfm_no}")
 
         except Exception as e:
             print(f"Error showing equipment PM templates: {e}")
@@ -5707,80 +5776,351 @@ class AITCMMSSystem:
         if not selected:
             messagebox.showwarning("Warning", "Please select a template to preview")
             return
-    
+
         item = self.templates_tree.item(selected[0])
         bfm_no = str(item['values'][0])
         template_name = item['values'][1]
+        pm_type = item['values'][2]
 
-        # Get template data
         cursor = self.conn.cursor()
-        cursor.execute('''
-            SELECT pt.*, e.description, e.sap_material_no, e.location
-            FROM pm_templates pt
-            LEFT JOIN equipment e ON pt.bfm_equipment_no = e.bfm_equipment_no
-            WHERE pt.bfm_equipment_no = %s AND pt.template_name = %s
-        ''', (bfm_no, template_name))
-    
-        template_data = cursor.fetchone()
-        if not template_data:
-            messagebox.showerror("Error", "Template not found")
-            return
-    
+
+        # Check if this is a default template
+        is_default = template_name.startswith("Default - ")
+
+        if is_default:
+            # Load default template data
+            cursor.execute('''
+                SELECT description, sap_material_no, location
+                FROM equipment
+                WHERE bfm_equipment_no = %s
+            ''', (bfm_no,))
+            equipment_data = cursor.fetchone()
+
+            if not equipment_data:
+                messagebox.showerror("Error", "Equipment not found")
+                return
+
+            # Load default checklist items
+            cursor.execute('''
+                SELECT description
+                FROM default_pm_checklist
+                WHERE is_active = TRUE
+                ORDER BY step_number
+            ''')
+            checklist_rows = cursor.fetchall()
+            checklist_items = [row[0] for row in checklist_rows]
+
+            equipment_desc = equipment_data[0]
+            special_instructions = None
+            safety_notes = None
+            estimated_hours = 2.0
+        else:
+            # Load custom template data
+            cursor.execute('''
+                SELECT pt.*, e.description, e.sap_material_no, e.location
+                FROM pm_templates pt
+                LEFT JOIN equipment e ON pt.bfm_equipment_no = e.bfm_equipment_no
+                WHERE pt.bfm_equipment_no = %s AND pt.template_name = %s
+            ''', (bfm_no, template_name))
+
+            template_data = cursor.fetchone()
+            if not template_data:
+                messagebox.showerror("Error", "Template not found")
+                return
+
+            equipment_desc = template_data[9]
+            checklist_items = json.loads(template_data[4]) if template_data[4] else []
+            special_instructions = template_data[5]
+            safety_notes = template_data[6]
+            estimated_hours = template_data[7]
+
         # Create preview dialog
         preview_dialog = tk.Toplevel(self.root)
         preview_dialog.title(f"PM Template Preview - {bfm_no}")
-        preview_dialog.geometry("700x600")
+        preview_dialog.geometry("700x650")
         preview_dialog.transient(self.root)
         preview_dialog.grab_set()
-    
+
         # Template info
         info_frame = ttk.LabelFrame(preview_dialog, text="Template Information", padding=10)
         info_frame.pack(fill='x', padx=10, pady=5)
-    
-        info_text = f"Equipment: {bfm_no} - {template_data[9] or 'N/A'}\n"
-        info_text += f"Template: {template_data[2]}\n"
-        info_text += f"PM Type: {template_data[3]}\n"
-        info_text += f"Estimated Hours: {template_data[7]:.1f}h"
-    
+
+        info_text = f"Equipment: {bfm_no} - {equipment_desc or 'N/A'}\n"
+        info_text += f"Template: {template_name}\n"
+        info_text += f"PM Type: {pm_type}\n"
+        info_text += f"Estimated Hours: {estimated_hours:.1f}h"
+
+        if is_default:
+            info_text += "\n\nType: DEFAULT TEMPLATE (can be customized)"
+
         ttk.Label(info_frame, text=info_text, font=('Arial', 10)).pack(anchor='w')
-    
+
         # Checklist preview
         checklist_frame = ttk.LabelFrame(preview_dialog, text="PM Checklist", padding=10)
         checklist_frame.pack(fill='both', expand=True, padx=10, pady=5)
-    
+
         checklist_text = tk.Text(checklist_frame, wrap='word', font=('Arial', 10))
         scrollbar = ttk.Scrollbar(checklist_frame, orient='vertical', command=checklist_text.yview)
         checklist_text.configure(yscrollcommand=scrollbar.set)
-    
+
         # Format checklist content
         try:
-            checklist_items = json.loads(template_data[4]) if template_data[4] else []
             content = "PM CHECKLIST:\n" + "="*50 + "\n\n"
-        
+
             for i, item in enumerate(checklist_items, 1):
                 content += f"{i:2d}. {item}\n"
-        
-            if template_data[5]:  # Special instructions
-                content += f"\n\nSPECIAL INSTRUCTIONS:\n{template_data[5]}\n"
-        
-            if template_data[6]:  # Safety notes
-                content += f"\n\nSAFETY NOTES:\n{template_data[6]}\n"
-        
+
+            if special_instructions:
+                content += f"\n\nSPECIAL INSTRUCTIONS:\n{special_instructions}\n"
+
+            if safety_notes:
+                content += f"\n\nSAFETY NOTES:\n{safety_notes}\n"
+
             checklist_text.insert('1.0', content)
             checklist_text.config(state='disabled')
-        
+
         except Exception as e:
             checklist_text.insert('1.0', f"Error loading template: {str(e)}")
             checklist_text.config(state='disabled')
-    
+
         checklist_text.pack(side='left', fill='both', expand=True)
         scrollbar.pack(side='right', fill='y')
-    
+
         # Buttons
         button_frame = ttk.Frame(preview_dialog)
         button_frame.pack(side='bottom', fill='x', padx=10, pady=10)
-    
+
         ttk.Button(button_frame, text="Close", command=preview_dialog.destroy).pack(side='right', padx=5)
+
+        # If default template, add "Customize" button
+        if is_default:
+            def customize_default():
+                preview_dialog.destroy()
+                self.create_custom_from_default(bfm_no, pm_type, checklist_items)
+
+            ttk.Button(button_frame, text="Customize This Template",
+                      command=customize_default, style='Accent.TButton').pack(side='right', padx=5)
+
+    def create_custom_from_default(self, bfm_no, pm_type, default_checklist_items):
+        """Create a custom template based on default checklist for specific equipment"""
+        dialog = tk.Toplevel(self.root)
+        dialog.title(f"Customize PM Template for {bfm_no}")
+        dialog.geometry("800x750")
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        # Get equipment info
+        cursor = self.conn.cursor()
+        cursor.execute('SELECT description FROM equipment WHERE bfm_equipment_no = %s', (bfm_no,))
+        equipment_info = cursor.fetchone()
+        equipment_desc = equipment_info[0] if equipment_info else "Unknown"
+
+        # Header with equipment info
+        header_frame = ttk.LabelFrame(dialog, text="Template Information", padding=10)
+        header_frame.pack(fill='x', padx=10, pady=5)
+
+        info_text = f"Equipment: {bfm_no} - {equipment_desc}\nPM Type: {pm_type}"
+        ttk.Label(header_frame, text=info_text, font=('Arial', 10, 'bold')).pack(anchor='w', pady=5)
+
+        # Template name
+        name_frame = ttk.Frame(header_frame)
+        name_frame.pack(fill='x', pady=5)
+        ttk.Label(name_frame, text="Template Name:").pack(side='left', padx=5)
+        template_name_var = tk.StringVar(value=f"Custom {pm_type} PM")
+        ttk.Entry(name_frame, textvariable=template_name_var, width=40).pack(side='left', padx=5)
+
+        # Estimated hours
+        hours_frame = ttk.Frame(header_frame)
+        hours_frame.pack(fill='x', pady=5)
+        ttk.Label(hours_frame, text="Estimated Hours:").pack(side='left', padx=5)
+        est_hours_var = tk.StringVar(value="2.0")
+        ttk.Entry(hours_frame, textvariable=est_hours_var, width=10).pack(side='left', padx=5)
+
+        # Checklist section
+        checklist_frame = ttk.LabelFrame(dialog, text="Customize PM Checklist", padding=10)
+        checklist_frame.pack(fill='both', expand=True, padx=10, pady=5)
+
+        # Controls for checklist
+        controls_frame = ttk.Frame(checklist_frame)
+        controls_frame.pack(fill='x', pady=5)
+
+        # Listbox with default items pre-populated
+        list_frame = ttk.Frame(checklist_frame)
+        list_frame.pack(fill='both', expand=True, pady=5)
+
+        checklist_listbox = tk.Listbox(list_frame, height=15, font=('Arial', 9))
+        list_scrollbar = ttk.Scrollbar(list_frame, orient='vertical', command=checklist_listbox.yview)
+        checklist_listbox.configure(yscrollcommand=list_scrollbar.set)
+
+        checklist_listbox.pack(side='left', fill='both', expand=True)
+        list_scrollbar.pack(side='right', fill='y')
+
+        # Pre-populate with default items
+        for item in default_checklist_items:
+            checklist_listbox.insert('end', item)
+
+        # Entry for new items
+        entry_frame = ttk.Frame(checklist_frame)
+        entry_frame.pack(fill='x', pady=5)
+        ttk.Label(entry_frame, text="Add/Edit Item:").pack(side='left', padx=5)
+        item_entry = ttk.Entry(entry_frame, width=60)
+        item_entry.pack(side='left', padx=5, fill='x', expand=True)
+
+        def add_item():
+            text = item_entry.get().strip()
+            if text:
+                checklist_listbox.insert('end', text)
+                item_entry.delete(0, 'end')
+
+        def edit_item():
+            selection = checklist_listbox.curselection()
+            if selection:
+                text = item_entry.get().strip()
+                if text:
+                    checklist_listbox.delete(selection[0])
+                    checklist_listbox.insert(selection[0], text)
+                    item_entry.delete(0, 'end')
+
+        def delete_item():
+            selection = checklist_listbox.curselection()
+            if selection:
+                checklist_listbox.delete(selection[0])
+
+        def move_up():
+            selection = checklist_listbox.curselection()
+            if selection and selection[0] > 0:
+                idx = selection[0]
+                text = checklist_listbox.get(idx)
+                checklist_listbox.delete(idx)
+                checklist_listbox.insert(idx-1, text)
+                checklist_listbox.selection_set(idx-1)
+
+        def move_down():
+            selection = checklist_listbox.curselection()
+            if selection and selection[0] < checklist_listbox.size()-1:
+                idx = selection[0]
+                text = checklist_listbox.get(idx)
+                checklist_listbox.delete(idx)
+                checklist_listbox.insert(idx+1, text)
+                checklist_listbox.selection_set(idx+1)
+
+        def on_select(event):
+            selection = checklist_listbox.curselection()
+            if selection:
+                item_entry.delete(0, 'end')
+                item_entry.insert(0, checklist_listbox.get(selection[0]))
+
+        checklist_listbox.bind('<<ListboxSelect>>', on_select)
+
+        # Buttons for list management
+        btn_frame = ttk.Frame(checklist_frame)
+        btn_frame.pack(fill='x', pady=5)
+
+        ttk.Button(btn_frame, text="Add Item", command=add_item).pack(side='left', padx=2)
+        ttk.Button(btn_frame, text="Edit Item", command=edit_item).pack(side='left', padx=2)
+        ttk.Button(btn_frame, text="Delete Item", command=delete_item).pack(side='left', padx=2)
+        ttk.Button(btn_frame, text="Move Up", command=move_up).pack(side='left', padx=2)
+        ttk.Button(btn_frame, text="Move Down", command=move_down).pack(side='left', padx=2)
+
+        # Special instructions
+        inst_frame = ttk.LabelFrame(dialog, text="Special Instructions", padding=10)
+        inst_frame.pack(fill='x', padx=10, pady=5)
+        special_instructions_text = tk.Text(inst_frame, height=3, font=('Arial', 9), wrap='word')
+        special_instructions_text.pack(fill='both', expand=True)
+
+        # Safety notes
+        safety_frame = ttk.LabelFrame(dialog, text="Safety Notes", padding=10)
+        safety_frame.pack(fill='x', padx=10, pady=5)
+        safety_notes_text = tk.Text(safety_frame, height=3, font=('Arial', 9), wrap='word')
+        safety_notes_text.pack(fill='both', expand=True)
+
+        # Save button
+        def save_custom_template():
+            template_name = template_name_var.get().strip()
+            if not template_name:
+                messagebox.showerror("Error", "Please enter a template name")
+                return
+
+            # Collect checklist items
+            checklist_items = []
+            for i in range(checklist_listbox.size()):
+                checklist_items.append(checklist_listbox.get(i))
+
+            if not checklist_items:
+                messagebox.showerror("Error", "Please add at least one checklist item")
+                return
+
+            try:
+                est_hours = float(est_hours_var.get() or 2.0)
+            except ValueError:
+                messagebox.showerror("Error", "Invalid estimated hours value")
+                return
+
+            try:
+                cursor = self.conn.cursor()
+
+                # Check if template already exists
+                cursor.execute('''
+                    SELECT id FROM pm_templates
+                    WHERE bfm_equipment_no = %s AND template_name = %s
+                ''', (bfm_no, template_name))
+
+                if cursor.fetchone():
+                    if not messagebox.askyesno("Template Exists",
+                        f"A template named '{template_name}' already exists for {bfm_no}.\n\nOverwrite it?"):
+                        return
+
+                    # Update existing
+                    cursor.execute('''
+                        UPDATE pm_templates
+                        SET pm_type = %s, checklist_items = %s,
+                            special_instructions = %s, safety_notes = %s,
+                            estimated_hours = %s, updated_date = CURRENT_TIMESTAMP
+                        WHERE bfm_equipment_no = %s AND template_name = %s
+                    ''', (
+                        pm_type,
+                        json.dumps(checklist_items),
+                        special_instructions_text.get('1.0', 'end-1c'),
+                        safety_notes_text.get('1.0', 'end-1c'),
+                        est_hours,
+                        bfm_no,
+                        template_name
+                    ))
+                else:
+                    # Insert new
+                    cursor.execute('''
+                        INSERT INTO pm_templates
+                        (bfm_equipment_no, template_name, pm_type, checklist_items,
+                        special_instructions, safety_notes, estimated_hours)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    ''', (
+                        bfm_no,
+                        template_name,
+                        pm_type,
+                        json.dumps(checklist_items),
+                        special_instructions_text.get('1.0', 'end-1c'),
+                        safety_notes_text.get('1.0', 'end-1c'),
+                        est_hours
+                    ))
+
+                self.conn.commit()
+                messagebox.showinfo("Success", f"Custom PM template saved for {bfm_no}")
+                dialog.destroy()
+
+                # Reload templates if we're on the PM Templates tab
+                if hasattr(self, 'templates_tree'):
+                    self.load_pm_templates()
+
+            except Exception as e:
+                print(f"Error saving custom template: {e}")
+                messagebox.showerror("Error", f"Failed to save template: {str(e)}")
+
+        button_frame = ttk.Frame(dialog)
+        button_frame.pack(side='bottom', fill='x', padx=10, pady=10)
+
+        ttk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side='right', padx=5)
+        ttk.Button(button_frame, text="Save Custom Template",
+                  command=save_custom_template, style='Accent.TButton').pack(side='right', padx=5)
 
     def delete_pm_template(self):
         """Delete selected PM template"""
@@ -5818,34 +6158,80 @@ class AITCMMSSystem:
         if not selected:
             messagebox.showwarning("Warning", "Please select a template to export")
             return
-    
+
         item = self.templates_tree.item(selected[0])
         bfm_no = str(item['values'][0]).strip()
         template_name = str(item['values'][1]).strip()
+        pm_type = item['values'][2]
 
-        # Get template and equipment data
         cursor = self.conn.cursor()
-        cursor.execute('''
-            SELECT pt.*, e.sap_material_no, e.description, e.tool_id_drawing_no, e.location
-            FROM pm_templates pt
-            LEFT JOIN equipment e ON pt.bfm_equipment_no = e.bfm_equipment_no
-            WHERE pt.bfm_equipment_no = %s AND pt.template_name = %s
-        ''', (bfm_no, template_name))
 
-        template_data = cursor.fetchone()
-        if not template_data:
-            messagebox.showerror("Error", f"Template not found for BFM: {bfm_no}, Name: {template_name}\n\nPlease check that the template exists in the database.")
-            return
-    
+        # Check if this is a default template
+        is_default = template_name.startswith("Default - ")
+
+        if is_default:
+            # Load default template data
+            cursor.execute('''
+                SELECT sap_material_no, description, tool_id_drawing_no, location
+                FROM equipment
+                WHERE bfm_equipment_no = %s
+            ''', (bfm_no,))
+            equipment_data = cursor.fetchone()
+
+            if not equipment_data:
+                messagebox.showerror("Error", "Equipment not found")
+                return
+
+            # Load default checklist items
+            cursor.execute('''
+                SELECT description
+                FROM default_pm_checklist
+                WHERE is_active = TRUE
+                ORDER BY step_number
+            ''')
+            checklist_rows = cursor.fetchall()
+            checklist_items = [row[0] for row in checklist_rows]
+
+            # Construct template_data tuple to match expected format
+            template_data = (
+                None,  # template_id
+                bfm_no,  # bfm_equipment_no
+                template_name,  # template_name
+                pm_type,  # pm_type
+                json.dumps(checklist_items),  # checklist_items (JSON)
+                None,  # special_instructions
+                None,  # safety_notes
+                2.0,  # estimated_hours
+                None,  # created_date
+                None,  # updated_date
+                equipment_data[0],  # sap_material_no
+                equipment_data[1],  # description
+                equipment_data[2],  # tool_id_drawing_no
+                equipment_data[3]   # location
+            )
+        else:
+            # Get template and equipment data
+            cursor.execute('''
+                SELECT pt.*, e.sap_material_no, e.description, e.tool_id_drawing_no, e.location
+                FROM pm_templates pt
+                LEFT JOIN equipment e ON pt.bfm_equipment_no = e.bfm_equipment_no
+                WHERE pt.bfm_equipment_no = %s AND pt.template_name = %s
+            ''', (bfm_no, template_name))
+
+            template_data = cursor.fetchone()
+            if not template_data:
+                messagebox.showerror("Error", f"Template not found for BFM: {bfm_no}, Name: {template_name}\n\nPlease check that the template exists in the database.")
+                return
+
         try:
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            filename = f"Custom_PM_Template_{bfm_no}_{template_name.replace(' ', '_')}_{timestamp}.pdf"
-        
+            filename = f"PM_Template_{bfm_no}_{template_name.replace(' ', '_')}_{timestamp}.pdf"
+
             # Create custom PDF using the template data
             self.create_custom_pm_template_pdf(filename, template_data)
-        
-            messagebox.showinfo("Success", f"Custom PM template exported to: {filename}")
-        
+
+            messagebox.showinfo("Success", f"PM template exported to: {filename}")
+
         except Exception as e:
             messagebox.showerror("Error", f"Failed to export template: {str(e)}")
 
