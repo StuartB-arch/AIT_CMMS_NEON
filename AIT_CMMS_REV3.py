@@ -3361,73 +3361,6 @@ class AITCMMSSystem:
     
         self.conn.commit()
 
-    def create_custom_pm_templates_tab(self):
-        """Create PM Templates management tab"""
-        self.pm_templates_frame = ttk.Frame(self.notebook)
-        self.notebook.add(self.pm_templates_frame, text="PM Templates")
-    
-        # Controls
-        controls_frame = ttk.LabelFrame(self.pm_templates_frame, text="PM Template Controls", padding=10)
-        controls_frame.pack(fill='x', padx=10, pady=5)
-    
-        ttk.Button(controls_frame, text="Create Custom Template", 
-                command=self.create_custom_pm_template_dialog).pack(side='left', padx=5)
-        ttk.Button(controls_frame, text="Edit Template", 
-                command=self.edit_pm_template_dialog).pack(side='left', padx=5)
-        ttk.Button(controls_frame, text="Preview Template", 
-                command=self.preview_pm_template).pack(side='left', padx=5)
-        ttk.Button(controls_frame, text="Delete Template", 
-                command=self.delete_pm_template).pack(side='left', padx=5)
-        ttk.Button(controls_frame, text="Export Template to PDF", 
-                command=self.export_custom_template_pdf).pack(side='left', padx=5)
-    
-        # Search frame
-        search_frame = ttk.Frame(self.pm_templates_frame)
-        search_frame.pack(fill='x', padx=10, pady=5)
-    
-        ttk.Label(search_frame, text="Search Templates:").pack(side='left', padx=5)
-        self.template_search_var = tk.StringVar()
-        self.template_search_var.trace('w', self.filter_template_list)
-        search_entry = ttk.Entry(search_frame, textvariable=self.template_search_var, width=30)
-        search_entry.pack(side='left', padx=5)
-    
-        # Templates list
-        list_frame = ttk.LabelFrame(self.pm_templates_frame, text="PM Templates", padding=10)
-        list_frame.pack(fill='both', expand=True, padx=10, pady=5)
-    
-        self.templates_tree = ttk.Treeview(list_frame,
-                                        columns=('BFM No', 'Template Name', 'PM Type', 'Steps', 'Est Hours', 'Updated'),
-                                        show='headings')
-    
-        template_columns = {
-            'BFM No': ('BFM Equipment No', 120),
-            'Template Name': ('Template Name', 200),
-            'PM Type': ('PM Type', 100),
-            'Steps': ('# Steps', 80),
-            'Est Hours': ('Est Hours', 80),
-            'Updated': ('Last Updated', 120)
-        }
-    
-        for col, (heading, width) in template_columns.items():
-            self.templates_tree.heading(col, text=heading)
-            self.templates_tree.column(col, width=width)
-    
-        # Scrollbars
-        template_v_scrollbar = ttk.Scrollbar(list_frame, orient='vertical', command=self.templates_tree.yview)
-        template_h_scrollbar = ttk.Scrollbar(list_frame, orient='horizontal', command=self.templates_tree.xview)
-        self.templates_tree.configure(yscrollcommand=template_v_scrollbar.set, xscrollcommand=template_h_scrollbar.set)
-    
-        # Pack treeview and scrollbars
-        self.templates_tree.grid(row=0, column=0, sticky='nsew')
-        template_v_scrollbar.grid(row=0, column=1, sticky='ns')
-        template_h_scrollbar.grid(row=1, column=0, sticky='ew')
-    
-        list_frame.grid_rowconfigure(0, weight=1)
-        list_frame.grid_columnconfigure(0, weight=1)
-    
-        # Load templates
-        self.load_pm_templates()
-
     def create_custom_pm_template_dialog(self):
         """Dialog to create custom PM template for specific equipment"""
         print("DEBUG: Starting create_custom_pm_template_dialog method")  # Add this line
@@ -3655,82 +3588,6 @@ class AITCMMSSystem:
 
         ttk.Button(button_frame, text="Save Template", command=save_template).pack(side='left', padx=5)
         ttk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side='right', padx=5)
-
-    def load_pm_templates(self):
-        """Load PM templates into the tree"""
-        try:
-            cursor = self.conn.cursor()
-            cursor.execute('''
-                SELECT pt.bfm_equipment_no, pt.template_name, pt.pm_type, 
-                    pt.checklist_items, pt.estimated_hours, pt.updated_date
-                FROM pm_templates pt
-                ORDER BY pt.bfm_equipment_no, pt.template_name
-            ''')
-        
-            # Clear existing items
-            for item in self.templates_tree.get_children():
-                self.templates_tree.delete(item)
-        
-            # Add templates
-            for template in cursor.fetchall():
-                bfm_no, name, pm_type, checklist_json, est_hours, updated = template
-            
-                # Count checklist items
-                try:
-                    checklist_items = json.loads(checklist_json) if checklist_json else []
-                    step_count = len(checklist_items)
-                except:
-                    step_count = 0
-            
-                self.templates_tree.insert('', 'end', values=(
-                    bfm_no, name, pm_type, step_count, f"{est_hours:.1f}h", str(updated)[:10] if updated else "N/A"
-                ))
-            
-        except Exception as e:
-            print(f"Error loading PM templates: {e}")
-
-    def filter_template_list(self, *args):
-        """Filter template list based on search term"""
-        search_term = self.template_search_var.get().lower()
-    
-        try:
-            cursor = self.conn.cursor()
-            if search_term:
-                cursor.execute('''
-                    SELECT pt.bfm_equipment_no, pt.template_name, pt.pm_type, 
-                        pt.checklist_items, pt.estimated_hours, pt.updated_date
-                    FROM pm_templates pt
-                    WHERE LOWER(pt.bfm_equipment_no) LIKE %s
-                    OR LOWER(pt.template_name) LIKE %s
-                    ORDER BY pt.bfm_equipment_no, pt.template_name
-                ''', (f'%{search_term}%', f'%{search_term}%'))
-            else:
-                cursor.execute('''
-                    SELECT pt.bfm_equipment_no, pt.template_name, pt.pm_type, 
-                        pt.checklist_items, pt.estimated_hours, pt.updated_date
-                    FROM pm_templates pt
-                    ORDER BY pt.bfm_equipment_no, pt.template_name
-                ''')
-        
-            # Clear and repopulate
-            for item in self.templates_tree.get_children():
-                self.templates_tree.delete(item)
-        
-            for template in cursor.fetchall():
-                bfm_no, name, pm_type, checklist_json, est_hours, updated = template
-            
-                try:
-                    checklist_items = json.loads(checklist_json) if checklist_json else []
-                    step_count = len(checklist_items)
-                except:
-                    step_count = 0
-            
-                self.templates_tree.insert('', 'end', values=(
-                    bfm_no, name, pm_type, step_count, f"{est_hours:.1f}h", str(updated)[:10] if updated else "N/A"
-                ))
-    
-        except Exception as e:
-            print(f"Error filtering templates: {e}")
 
     def edit_pm_template_dialog(self):
         """Edit existing PM template with full functionality"""
@@ -5235,7 +5092,7 @@ class AITCMMSSystem:
     def init_pm_templates_database(self):
         """Initialize PM templates database tables"""
         cursor = self.conn.cursor()
-    
+
         # PM Templates table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS pm_templates (
@@ -5252,7 +5109,7 @@ class AITCMMSSystem:
                 FOREIGN KEY (bfm_equipment_no) REFERENCES equipment (bfm_equipment_no)
             )
         ''')
-    
+
         # Default checklist items for fallback
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS default_pm_checklist (
@@ -5263,7 +5120,7 @@ class AITCMMSSystem:
                 is_active BOOLEAN DEFAULT TRUE
             )
         ''')
-    
+
         # Insert default checklist if empty
         cursor.execute('SELECT COUNT(*) FROM default_pm_checklist')
         if cursor.fetchone()[0] == 0:
@@ -5286,53 +5143,110 @@ class AITCMMSSystem:
                 (16, "Dry runs have been performed (tests, restarts, etc.)"),
                 (17, "Ensure that AIT Sticker is applied")
             ]
-        
+
             for step_num, description in default_items:
                 cursor.execute('''
                     INSERT INTO default_pm_checklist (pm_type, step_number, description)
                     VALUES ('All', %s, %s)
                 ''', (step_num, description))
-    
+
         self.conn.commit()
 
     def create_custom_pm_templates_tab(self):
         """Create PM Templates management tab"""
         self.pm_templates_frame = ttk.Frame(self.notebook)
         self.notebook.add(self.pm_templates_frame, text="PM Templates")
-    
+
         # Controls
         controls_frame = ttk.LabelFrame(self.pm_templates_frame, text="PM Template Controls", padding=10)
         controls_frame.pack(fill='x', padx=10, pady=5)
-    
-        ttk.Button(controls_frame, text="Create Custom Template", 
+
+        ttk.Button(controls_frame, text="Create Custom Template",
                 command=self.create_custom_pm_template_dialog).pack(side='left', padx=5)
-        ttk.Button(controls_frame, text="Edit Template", 
+        ttk.Button(controls_frame, text="Edit Template",
                 command=self.edit_pm_template_dialog).pack(side='left', padx=5)
-        ttk.Button(controls_frame, text="Preview Template", 
+        ttk.Button(controls_frame, text="Preview Template",
                 command=self.preview_pm_template).pack(side='left', padx=5)
-        ttk.Button(controls_frame, text="Delete Template", 
+        ttk.Button(controls_frame, text="Delete Template",
                 command=self.delete_pm_template).pack(side='left', padx=5)
-        ttk.Button(controls_frame, text="Export Template to PDF", 
+        ttk.Button(controls_frame, text="Export Template to PDF",
                 command=self.export_custom_template_pdf).pack(side='left', padx=5)
-    
-        # Search frame
-        search_frame = ttk.Frame(self.pm_templates_frame)
-        search_frame.pack(fill='x', padx=10, pady=5)
-    
-        ttk.Label(search_frame, text="Search Templates:").pack(side='left', padx=5)
+
+        # Create main content area with paned window for resizable sections
+        main_paned = ttk.PanedWindow(self.pm_templates_frame, orient='vertical')
+        main_paned.pack(fill='both', expand=True, padx=10, pady=5)
+
+        # Top section: Equipment Search and List
+        equipment_section = ttk.Frame(main_paned)
+        main_paned.add(equipment_section, weight=1)
+
+        # Equipment search frame
+        equipment_search_frame = ttk.LabelFrame(equipment_section, text="Search Equipment by BFM/SAP/Name", padding=5)
+        equipment_search_frame.pack(fill='x', padx=5, pady=5)
+
+        ttk.Label(equipment_search_frame, text="Search:").pack(side='left', padx=5)
+        self.equipment_search_var = tk.StringVar()
+        self.equipment_search_var.trace('w', self.filter_equipment_for_pm_templates)
+        equipment_search_entry = ttk.Entry(equipment_search_frame, textvariable=self.equipment_search_var, width=40)
+        equipment_search_entry.pack(side='left', padx=5)
+        ttk.Label(equipment_search_frame, text="(Search by BFM No, SAP No, or Equipment Name)").pack(side='left', padx=5)
+
+        # Equipment list frame
+        equipment_list_frame = ttk.LabelFrame(equipment_section, text="Equipment List - Double-click to view PM Templates", padding=10)
+        equipment_list_frame.pack(fill='both', expand=True, padx=5, pady=5)
+
+        self.equipment_pm_tree = ttk.Treeview(equipment_list_frame,
+                                            columns=('BFM No', 'SAP No', 'Description', 'Location'),
+                                            show='headings', height=8)
+
+        equipment_columns = {
+            'BFM No': ('BFM Equipment No', 150),
+            'SAP No': ('SAP Material No', 150),
+            'Description': ('Equipment Description', 300),
+            'Location': ('Location', 150)
+        }
+
+        for col, (heading, width) in equipment_columns.items():
+            self.equipment_pm_tree.heading(col, text=heading)
+            self.equipment_pm_tree.column(col, width=width)
+
+        # Scrollbars for equipment tree
+        equipment_v_scrollbar = ttk.Scrollbar(equipment_list_frame, orient='vertical', command=self.equipment_pm_tree.yview)
+        equipment_h_scrollbar = ttk.Scrollbar(equipment_list_frame, orient='horizontal', command=self.equipment_pm_tree.xview)
+        self.equipment_pm_tree.configure(yscrollcommand=equipment_v_scrollbar.set, xscrollcommand=equipment_h_scrollbar.set)
+
+        self.equipment_pm_tree.grid(row=0, column=0, sticky='nsew')
+        equipment_v_scrollbar.grid(row=0, column=1, sticky='ns')
+        equipment_h_scrollbar.grid(row=1, column=0, sticky='ew')
+
+        equipment_list_frame.grid_rowconfigure(0, weight=1)
+        equipment_list_frame.grid_columnconfigure(0, weight=1)
+
+        # Bind double-click event to show templates for selected equipment
+        self.equipment_pm_tree.bind('<Double-Button-1>', self.show_equipment_pm_templates)
+
+        # Bottom section: Templates for selected equipment
+        templates_section = ttk.Frame(main_paned)
+        main_paned.add(templates_section, weight=1)
+
+        # Template search frame (kept for backward compatibility)
+        search_frame = ttk.Frame(templates_section)
+        search_frame.pack(fill='x', padx=5, pady=5)
+
+        ttk.Label(search_frame, text="Filter Templates:").pack(side='left', padx=5)
         self.template_search_var = tk.StringVar()
         self.template_search_var.trace('w', self.filter_template_list)
         search_entry = ttk.Entry(search_frame, textvariable=self.template_search_var, width=30)
         search_entry.pack(side='left', padx=5)
-    
+
         # Templates list
-        list_frame = ttk.LabelFrame(self.pm_templates_frame, text="PM Templates", padding=10)
-        list_frame.pack(fill='both', expand=True, padx=10, pady=5)
-    
+        list_frame = ttk.LabelFrame(templates_section, text="PM Templates (Double-click equipment above to filter, or view all below)", padding=10)
+        list_frame.pack(fill='both', expand=True, padx=5, pady=5)
+
         self.templates_tree = ttk.Treeview(list_frame,
                                         columns=('BFM No', 'Template Name', 'PM Type', 'Steps', 'Est Hours', 'Updated'),
-                                        show='headings')
-    
+                                        show='headings', height=8)
+
         template_columns = {
             'BFM No': ('BFM Equipment No', 120),
             'Template Name': ('Template Name', 200),
@@ -5341,25 +5255,26 @@ class AITCMMSSystem:
             'Est Hours': ('Est Hours', 80),
             'Updated': ('Last Updated', 120)
         }
-    
+
         for col, (heading, width) in template_columns.items():
             self.templates_tree.heading(col, text=heading)
             self.templates_tree.column(col, width=width)
-    
+
         # Scrollbars
         template_v_scrollbar = ttk.Scrollbar(list_frame, orient='vertical', command=self.templates_tree.yview)
         template_h_scrollbar = ttk.Scrollbar(list_frame, orient='horizontal', command=self.templates_tree.xview)
         self.templates_tree.configure(yscrollcommand=template_v_scrollbar.set, xscrollcommand=template_h_scrollbar.set)
-    
+
         # Pack treeview and scrollbars
         self.templates_tree.grid(row=0, column=0, sticky='nsew')
         template_v_scrollbar.grid(row=0, column=1, sticky='ns')
         template_h_scrollbar.grid(row=1, column=0, sticky='ew')
-    
+
         list_frame.grid_rowconfigure(0, weight=1)
         list_frame.grid_columnconfigure(0, weight=1)
-    
-        # Load templates
+
+        # Load equipment and templates
+        self.load_equipment_for_pm_templates()
         self.load_pm_templates()
 
     def create_custom_pm_template_dialog(self):
@@ -5662,7 +5577,129 @@ class AITCMMSSystem:
         except Exception as e:
             print(f"Error filtering templates: {e}")
 
-    
+    def load_equipment_for_pm_templates(self):
+        """Load equipment list for PM templates tab"""
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute('''
+                SELECT bfm_equipment_no, sap_material_no, description, location
+                FROM equipment
+                ORDER BY bfm_equipment_no
+            ''')
+
+            # Clear existing items
+            for item in self.equipment_pm_tree.get_children():
+                self.equipment_pm_tree.delete(item)
+
+            # Add equipment
+            for equipment in cursor.fetchall():
+                bfm_no, sap_no, description, location = equipment
+                self.equipment_pm_tree.insert('', 'end', values=(
+                    bfm_no or '',
+                    sap_no or '',
+                    description or '',
+                    location or ''
+                ))
+
+        except Exception as e:
+            print(f"Error loading equipment for PM templates: {e}")
+
+    def filter_equipment_for_pm_templates(self, *args):
+        """Filter equipment list based on search term"""
+        search_term = self.equipment_search_var.get().lower()
+
+        try:
+            cursor = self.conn.cursor()
+            if search_term:
+                cursor.execute('''
+                    SELECT bfm_equipment_no, sap_material_no, description, location
+                    FROM equipment
+                    WHERE LOWER(bfm_equipment_no) LIKE %s
+                    OR LOWER(sap_material_no) LIKE %s
+                    OR LOWER(description) LIKE %s
+                    ORDER BY bfm_equipment_no
+                ''', (f'%{search_term}%', f'%{search_term}%', f'%{search_term}%'))
+            else:
+                cursor.execute('''
+                    SELECT bfm_equipment_no, sap_material_no, description, location
+                    FROM equipment
+                    ORDER BY bfm_equipment_no
+                ''')
+
+            # Clear and repopulate
+            for item in self.equipment_pm_tree.get_children():
+                self.equipment_pm_tree.delete(item)
+
+            for equipment in cursor.fetchall():
+                bfm_no, sap_no, description, location = equipment
+                self.equipment_pm_tree.insert('', 'end', values=(
+                    bfm_no or '',
+                    sap_no or '',
+                    description or '',
+                    location or ''
+                ))
+
+        except Exception as e:
+            print(f"Error filtering equipment: {e}")
+
+    def show_equipment_pm_templates(self, event):
+        """Show PM templates for selected equipment when double-clicked"""
+        selected = self.equipment_pm_tree.selection()
+        if not selected:
+            return
+
+        # Get selected equipment BFM number
+        item = self.equipment_pm_tree.item(selected[0])
+        bfm_no = str(item['values'][0])
+
+        if not bfm_no:
+            return
+
+        try:
+            # Load templates for this equipment
+            cursor = self.conn.cursor()
+            cursor.execute('''
+                SELECT pt.bfm_equipment_no, pt.template_name, pt.pm_type,
+                    pt.checklist_items, pt.estimated_hours, pt.updated_date
+                FROM pm_templates pt
+                WHERE pt.bfm_equipment_no = %s
+                ORDER BY pt.template_name
+            ''', (bfm_no,))
+
+            # Clear templates tree
+            for item in self.templates_tree.get_children():
+                self.templates_tree.delete(item)
+
+            # Add templates for selected equipment
+            templates = cursor.fetchall()
+            if not templates:
+                messagebox.showinfo("No Templates",
+                    f"No PM templates found for equipment {bfm_no}")
+                return
+
+            for template in templates:
+                bfm, name, pm_type, checklist_json, est_hours, updated = template
+
+                # Count checklist items
+                try:
+                    checklist_items = json.loads(checklist_json) if checklist_json else []
+                    step_count = len(checklist_items)
+                except:
+                    step_count = 0
+
+                self.templates_tree.insert('', 'end', values=(
+                    bfm, name, pm_type, step_count,
+                    f"{est_hours:.1f}h",
+                    str(updated)[:10] if updated else "N/A"
+                ))
+
+            # Update the label to show we're viewing templates for specific equipment
+            messagebox.showinfo("Templates Loaded",
+                f"Showing {len(templates)} PM template(s) for equipment {bfm_no}")
+
+        except Exception as e:
+            print(f"Error showing equipment PM templates: {e}")
+            messagebox.showerror("Error", f"Failed to load templates: {str(e)}")
 
     def preview_pm_template(self):
         """Preview selected PM template"""
