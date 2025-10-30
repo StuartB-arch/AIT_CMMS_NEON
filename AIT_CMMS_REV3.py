@@ -3960,8 +3960,8 @@ class AITCMMSSystem:
             return
     
         item = self.templates_tree.item(selected[0])
-        bfm_no = str(item['values'][0])
-        template_name = item['values'][1]
+        bfm_no = str(item['values'][0]).strip()
+        template_name = str(item['values'][1]).strip()
 
         # Get template and equipment data
         cursor = self.conn.cursor()
@@ -3971,10 +3971,10 @@ class AITCMMSSystem:
             LEFT JOIN equipment e ON pt.bfm_equipment_no = e.bfm_equipment_no
             WHERE pt.bfm_equipment_no = %s AND pt.template_name = %s
         ''', (bfm_no, template_name))
-    
+
         template_data = cursor.fetchone()
         if not template_data:
-            messagebox.showerror("Error", "Template not found")
+            messagebox.showerror("Error", f"Template not found for BFM: {bfm_no}, Name: {template_name}\n\nPlease check that the template exists in the database.")
             return
     
         try:
@@ -5820,8 +5820,8 @@ class AITCMMSSystem:
             return
     
         item = self.templates_tree.item(selected[0])
-        bfm_no = str(item['values'][0])
-        template_name = item['values'][1]
+        bfm_no = str(item['values'][0]).strip()
+        template_name = str(item['values'][1]).strip()
 
         # Get template and equipment data
         cursor = self.conn.cursor()
@@ -5831,10 +5831,10 @@ class AITCMMSSystem:
             LEFT JOIN equipment e ON pt.bfm_equipment_no = e.bfm_equipment_no
             WHERE pt.bfm_equipment_no = %s AND pt.template_name = %s
         ''', (bfm_no, template_name))
-    
+
         template_data = cursor.fetchone()
         if not template_data:
-            messagebox.showerror("Error", "Template not found")
+            messagebox.showerror("Error", f"Template not found for BFM: {bfm_no}, Name: {template_name}\n\nPlease check that the template exists in the database.")
             return
     
         try:
