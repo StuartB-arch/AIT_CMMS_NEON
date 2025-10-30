@@ -112,6 +112,7 @@ class CompletionRecordRepository:
         self.conn = conn
         self._completion_cache = None  # Cache for bulk loaded completions
         self._scheduled_cache = None   # Cache for scheduled PMs
+        self._uncompleted_cache = None # Cache for uncompleted schedules (PERFORMANCE FIX)
 
     def get_recent_completions(self, bfm_no: str, days: int = 400) -> List[CompletionRecord]:
         """Get recent completion records for equipment - EXTENDED TO 400 DAYS FOR ANNUAL PMs"""
@@ -230,13 +231,58 @@ class CompletionRecordRepository:
 
         print(f"DEBUG: Loaded scheduled PMs for {len(self._scheduled_cache)} equipment items")
 
+    def bulk_load_uncompleted_schedules(self, before_week: datetime) -> None:
+        """Load ALL uncompleted schedules from PREVIOUS weeks in one query - CRITICAL PERFORMANCE FIX
+
+        This fixes the N+1 query problem where get_uncompleted_schedules() was called
+        individually for each equipment item, causing thousands of queries.
+        """
+        print(f"DEBUG: Bulk loading uncompleted schedules from previous weeks...")
+        cursor = self.conn.cursor()
+        cursor.execute('''
+            SELECT bfm_equipment_no, pm_type, week_start_date, assigned_technician, status, scheduled_date
+            FROM weekly_pm_schedules
+            WHERE week_start_date < %s
+            AND status = 'Scheduled'
+            ORDER BY bfm_equipment_no, pm_type, week_start_date DESC
+        ''', (before_week.strftime('%Y-%m-%d'),))
+
+        # Group uncompleted schedules by equipment + PM type
+        self._uncompleted_cache = {}
+        for row in cursor.fetchall():
+            bfm_no = row[0]
+            pm_type = row[1]
+            cache_key = f"{bfm_no}_{pm_type}"
+
+            if cache_key not in self._uncompleted_cache:
+                self._uncompleted_cache[cache_key] = []
+
+            # Only keep the 5 most recent for each equipment+PM type combination
+            if len(self._uncompleted_cache[cache_key]) < 5:
+                self._uncompleted_cache[cache_key].append({
+                    'week_start': row[2],
+                    'technician': row[3],
+                    'status': row[4],
+                    'scheduled_date': row[5]
+                })
+
+        print(f"DEBUG: Loaded uncompleted schedules for {len(self._uncompleted_cache)} equipment+PM type combinations")
+
     def get_uncompleted_schedules(self, bfm_no: str, pm_type: PMType, before_week: datetime) -> List[Dict]:
         """Get uncompleted scheduled PMs for equipment from PREVIOUS weeks (before the specified week)
 
         This is CRITICAL to prevent duplicate scheduling:
         - If equipment was scheduled in a previous week but NOT completed
         - It should NOT be scheduled again in the current week
+
+        PERFORMANCE FIX: Use cache if available to avoid N+1 query problem
         """
+        # Use cache if available
+        if self._uncompleted_cache is not None:
+            cache_key = f"{bfm_no}_{pm_type.value}"
+            return self._uncompleted_cache.get(cache_key, [])
+
+        # Fallback to individual query if cache not loaded
         cursor = self.conn.cursor()
         cursor.execute('''
             SELECT week_start_date, assigned_technician, status, scheduled_date
@@ -276,6 +322,7 @@ class CompletionRecordRepository:
         """Clear the caches"""
         self._completion_cache = None
         self._scheduled_cache = None
+        self._uncompleted_cache = None
 
 class PMEligibilityChecker:
     """Responsible for determining if a PM is eligible for scheduling"""
@@ -745,9 +792,10 @@ class PMSchedulingService:
                 }
 
             # PERFORMANCE OPTIMIZATION: Bulk load all data to avoid N+1 query problem
-            # This reduces thousands of individual queries to just 3 bulk queries
+            # This reduces thousands of individual queries to just 4 bulk queries
             print(f"DEBUG: OPTIMIZATION - Pre-loading all data to avoid slow individual queries...")
             self.completion_repo.bulk_load_completions(days=400)
+            self.completion_repo.bulk_load_uncompleted_schedules(week_start)  # CRITICAL FIX: Bulk load uncompleted schedules
             # Note: bulk_load_scheduled was moved BEFORE deletion (see above)
             self.eligibility_checker.bulk_load_next_annual()
             print(f"DEBUG: OPTIMIZATION - Data pre-loading complete!")
@@ -6691,16 +6739,41 @@ class AITCMMSSystem:
                 CREATE TABLE IF NOT EXISTS weekly_pm_schedules (
                     id SERIAL PRIMARY KEY,
                     bfm_equipment_no TEXT,
-                    schedule_type TEXT,
+                    pm_type TEXT,
                     assigned_technician TEXT,
-                    assigned_week INTEGER,
-                    assigned_day TEXT,
+                    scheduled_date TEXT,
                     week_start_date TEXT,
                     week_end_date TEXT,
+                    status TEXT DEFAULT 'Scheduled',
                     created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (bfm_equipment_no) REFERENCES equipment (bfm_equipment_no)
                 )
             ''')
+
+            # SCHEMA MIGRATION: Add missing columns if they don't exist
+            # This ensures existing databases are updated to the new schema
+            try:
+                cursor.execute('''
+                    ALTER TABLE weekly_pm_schedules
+                    ADD COLUMN IF NOT EXISTS pm_type TEXT
+                ''')
+                cursor.execute('''
+                    ALTER TABLE weekly_pm_schedules
+                    ADD COLUMN IF NOT EXISTS scheduled_date TEXT
+                ''')
+                cursor.execute('''
+                    ALTER TABLE weekly_pm_schedules
+                    ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'Scheduled'
+                ''')
+                # Migrate old schedule_type data to pm_type if needed
+                cursor.execute('''
+                    UPDATE weekly_pm_schedules
+                    SET pm_type = schedule_type
+                    WHERE pm_type IS NULL AND schedule_type IS NOT NULL
+                ''')
+            except Exception as e:
+                print(f"Note: Schema migration skipped or already applied: {e}")
+                # Continue even if columns already exist
         
             # Corrective Maintenance table
             cursor.execute('''
@@ -6885,6 +6958,31 @@ class AITCMMSSystem:
                     action_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+
+            # PERFORMANCE OPTIMIZATION: Create indexes for weekly_pm_schedules table
+            # These indexes dramatically speed up queries during weekly PM generation
+            print("CHECK: Creating performance indexes for weekly_pm_schedules...")
+
+            # Index for uncompleted schedules query (bfm_equipment_no + pm_type + week_start_date)
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_weekly_pm_schedules_uncompleted
+                ON weekly_pm_schedules(bfm_equipment_no, pm_type, week_start_date)
+                WHERE status = 'Scheduled'
+            ''')
+
+            # Index for week lookups with status filtering
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_weekly_pm_schedules_week_status
+                ON weekly_pm_schedules(week_start_date, status)
+            ''')
+
+            # Index for equipment lookups
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_weekly_pm_schedules_equipment
+                ON weekly_pm_schedules(bfm_equipment_no)
+            ''')
+
+            print("CHECK: Performance indexes created successfully!")
 
             self.conn.commit()
             print("CHECK: Database tables created successfully!")
