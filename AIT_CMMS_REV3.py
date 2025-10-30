@@ -6044,7 +6044,10 @@ class AITCMMSSystem:
             # Collect checklist items
             checklist_items = []
             for i in range(checklist_listbox.size()):
-                checklist_items.append(checklist_listbox.get(i))
+                step_text = checklist_listbox.get(i)
+                # Strip number prefix if present (e.g., "1. Check oil" -> "Check oil")
+                step_content = '. '.join(step_text.split('. ')[1:]) if '. ' in step_text else step_text
+                checklist_items.append(step_content)
 
             if not checklist_items:
                 messagebox.showerror("Error", "Please add at least one checklist item")
