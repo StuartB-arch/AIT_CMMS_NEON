@@ -41,6 +41,25 @@ except ImportError:
     REPORTLAB_AVAILABLE = False
     print("ReportLab not installed. PDF generation will not work.")
 
+def strip_checklist_numbers(text):
+    """
+    Strip ALL leading number prefixes from checklist items.
+    Handles cases like "1. Item", "1. 2. Item", "1. 2. 3. Item", etc.
+    Returns the text with all leading number patterns removed.
+
+    Examples:
+        "1. Check oil" -> "Check oil"
+        "1. 2. Check oil" -> "Check oil"
+        "Check oil" -> "Check oil" (unchanged if no numbers)
+    """
+    if not text or not isinstance(text, str):
+        return text
+
+    # Remove all leading patterns of "number. " (one or more)
+    # This regex matches one or more occurrences of digits followed by ". " at the start
+    cleaned = re.sub(r'^(\d+\.\s*)+', '', text.strip())
+    return cleaned.strip()
+
 class PMType(Enum):
     MONTHLY = "Monthly"
     ANNUAL = "Annual"
@@ -3528,7 +3547,7 @@ class AITCMMSSystem:
                 checklist_items = []
                 for i in range(checklist_listbox.size()):
                     step_text = checklist_listbox.get(i)
-                    step_content = '. '.join(step_text.split('. ')[1:]) if '. ' in step_text else step_text
+                    step_content = strip_checklist_numbers(step_text)
                     checklist_items.append(step_content)
             
                 if not checklist_items:
@@ -3564,7 +3583,7 @@ class AITCMMSSystem:
             selection = checklist_listbox.curselection()
             if selection:
                 step_text = checklist_listbox.get(selection[0])
-                step_content = '. '.join(step_text.split('. ')[1:]) if '. ' in step_text else step_text
+                step_content = strip_checklist_numbers(step_text)
                 step_text_var.set(step_content)
 
         # NOW CREATE BUTTONS - AFTER ALL FUNCTIONS ARE DEFINED
@@ -3807,7 +3826,7 @@ class AITCMMSSystem:
             selection = checklist_listbox.curselection()
             if selection:
                 step_text = checklist_listbox.get(selection[0])
-                step_content = '. '.join(step_text.split('. ')[1:]) if '. ' in step_text else step_text
+                step_content = strip_checklist_numbers(step_text)
                 step_text_var.set(step_content)
 
         # Create buttons
@@ -3824,7 +3843,9 @@ class AITCMMSSystem:
         # Load existing checklist items
         checklist_listbox.delete(0, 'end')
         for i, item in enumerate(orig_checklist_items, 1):
-            checklist_listbox.insert('end', f"{i}. {item}")
+            # Strip any existing numbers before adding new display numbers
+            clean_item = strip_checklist_numbers(item)
+            checklist_listbox.insert('end', f"{i}. {clean_item}")
 
         # Save and Cancel buttons
         button_frame = ttk.Frame(dialog)
@@ -5486,7 +5507,7 @@ class AITCMMSSystem:
                 checklist_items = []
                 for i in range(checklist_listbox.size()):
                     step_text = checklist_listbox.get(i)
-                    step_content = '. '.join(step_text.split('. ')[1:]) if '. ' in step_text else step_text
+                    step_content = strip_checklist_numbers(step_text)
                     checklist_items.append(step_content)
             
                 if not checklist_items:
@@ -5522,7 +5543,7 @@ class AITCMMSSystem:
             selection = checklist_listbox.curselection()
             if selection:
                 step_text = checklist_listbox.get(selection[0])
-                step_content = '. '.join(step_text.split('. ')[1:]) if '. ' in step_text else step_text
+                step_content = strip_checklist_numbers(step_text)
                 step_text_var.set(step_content)
 
         # NOW CREATE ALL BUTTONS - AFTER ALL FUNCTIONS ARE DEFINED
@@ -6045,8 +6066,8 @@ class AITCMMSSystem:
             checklist_items = []
             for i in range(checklist_listbox.size()):
                 step_text = checklist_listbox.get(i)
-                # Strip number prefix if present (e.g., "1. Check oil" -> "Check oil")
-                step_content = '. '.join(step_text.split('. ')[1:]) if '. ' in step_text else step_text
+                # Strip ALL number prefixes (e.g., "1. 2. Check oil" -> "Check oil")
+                step_content = strip_checklist_numbers(step_text)
                 checklist_items.append(step_content)
 
             if not checklist_items:
