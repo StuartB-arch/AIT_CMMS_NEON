@@ -4018,34 +4018,90 @@ class AITCMMSSystem:
         if not selected:
             messagebox.showwarning("Warning", "Please select a template to export")
             return
-    
+
         item = self.templates_tree.item(selected[0])
         bfm_no = str(item['values'][0])
         template_name = item['values'][1]
+        pm_type = item['values'][2]
 
-        # Get template and equipment data
         cursor = self.conn.cursor()
-        cursor.execute('''
-            SELECT pt.*, e.sap_material_no, e.description, e.tool_id_drawing_no, e.location
-            FROM pm_templates pt
-            LEFT JOIN equipment e ON pt.bfm_equipment_no = e.bfm_equipment_no
-            WHERE pt.bfm_equipment_no = %s AND pt.template_name = %s
-        ''', (bfm_no, template_name))
-    
-        template_data = cursor.fetchone()
-        if not template_data:
-            messagebox.showerror("Error", "Template not found")
-            return
-    
+
+        # Check if this is a default template
+        is_default = template_name.startswith("[Default]")
+
+        if is_default:
+            # Build template data for default template
+            cursor.execute('''
+                SELECT sap_material_no, description, tool_id_drawing_no, location
+                FROM equipment
+                WHERE bfm_equipment_no = %s
+            ''', (bfm_no,))
+
+            equip_data = cursor.fetchone()
+            if not equip_data:
+                messagebox.showerror("Error", "Equipment not found")
+                return
+
+            sap_no, description, tool_id, location = equip_data
+
+            # Get default checklist
+            cursor.execute('''
+                SELECT description
+                FROM default_pm_checklist
+                WHERE is_active = TRUE
+                ORDER BY step_number
+            ''')
+            checklist_items = [row[0] for row in cursor.fetchall()]
+
+            # Estimate hours based on PM type
+            est_hours_map = {'Monthly': 1.0, 'Six Month': 2.0, 'Annual': 4.0}
+            est_hours = est_hours_map.get(pm_type, 1.0)
+
+            # Build template data tuple to match expected format
+            # (id, bfm_no, template_name, pm_type, checklist_json,
+            #  special_instructions, safety_notes, estimated_hours, created_date, updated_date,
+            #  sap_no, description, tool_id, location)
+            template_data = (
+                None,  # id
+                bfm_no,  # bfm_no
+                template_name,  # template_name
+                pm_type,  # pm_type
+                json.dumps(checklist_items),  # checklist_json
+                None,  # special_instructions
+                None,  # safety_notes
+                est_hours,  # estimated_hours
+                None,  # created_date
+                None,  # updated_date
+                sap_no,  # sap_no
+                description,  # description
+                tool_id,  # tool_id
+                location  # location
+            )
+
+        else:
+            # Get custom template data
+            cursor.execute('''
+                SELECT pt.*, e.sap_material_no, e.description, e.tool_id_drawing_no, e.location
+                FROM pm_templates pt
+                LEFT JOIN equipment e ON pt.bfm_equipment_no = e.bfm_equipment_no
+                WHERE pt.bfm_equipment_no = %s AND pt.template_name = %s
+            ''', (bfm_no, template_name))
+
+            template_data = cursor.fetchone()
+            if not template_data:
+                messagebox.showerror("Error", "Template not found")
+                return
+
         try:
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            filename = f"Custom_PM_Template_{bfm_no}_{template_name.replace(' ', '_')}_{timestamp}.pdf"
-        
+            safe_template_name = template_name.replace('[Default] ', '').replace(' ', '_')
+            filename = f"PM_Template_{bfm_no}_{safe_template_name}_{timestamp}.pdf"
+
             # Create custom PDF using the template data
             self.create_custom_pm_template_pdf(filename, template_data)
-        
-            messagebox.showinfo("Success", f"Custom PM template exported to: {filename}")
-        
+
+            messagebox.showinfo("Success", f"PM template exported to: {filename}")
+
         except Exception as e:
             messagebox.showerror("Error", f"Failed to export template: {str(e)}")
 
@@ -5990,34 +6046,90 @@ class AITCMMSSystem:
         if not selected:
             messagebox.showwarning("Warning", "Please select a template to export")
             return
-    
+
         item = self.templates_tree.item(selected[0])
         bfm_no = str(item['values'][0])
         template_name = item['values'][1]
+        pm_type = item['values'][2]
 
-        # Get template and equipment data
         cursor = self.conn.cursor()
-        cursor.execute('''
-            SELECT pt.*, e.sap_material_no, e.description, e.tool_id_drawing_no, e.location
-            FROM pm_templates pt
-            LEFT JOIN equipment e ON pt.bfm_equipment_no = e.bfm_equipment_no
-            WHERE pt.bfm_equipment_no = %s AND pt.template_name = %s
-        ''', (bfm_no, template_name))
-    
-        template_data = cursor.fetchone()
-        if not template_data:
-            messagebox.showerror("Error", "Template not found")
-            return
-    
+
+        # Check if this is a default template
+        is_default = template_name.startswith("[Default]")
+
+        if is_default:
+            # Build template data for default template
+            cursor.execute('''
+                SELECT sap_material_no, description, tool_id_drawing_no, location
+                FROM equipment
+                WHERE bfm_equipment_no = %s
+            ''', (bfm_no,))
+
+            equip_data = cursor.fetchone()
+            if not equip_data:
+                messagebox.showerror("Error", "Equipment not found")
+                return
+
+            sap_no, description, tool_id, location = equip_data
+
+            # Get default checklist
+            cursor.execute('''
+                SELECT description
+                FROM default_pm_checklist
+                WHERE is_active = TRUE
+                ORDER BY step_number
+            ''')
+            checklist_items = [row[0] for row in cursor.fetchall()]
+
+            # Estimate hours based on PM type
+            est_hours_map = {'Monthly': 1.0, 'Six Month': 2.0, 'Annual': 4.0}
+            est_hours = est_hours_map.get(pm_type, 1.0)
+
+            # Build template data tuple to match expected format
+            # (id, bfm_no, template_name, pm_type, checklist_json,
+            #  special_instructions, safety_notes, estimated_hours, created_date, updated_date,
+            #  sap_no, description, tool_id, location)
+            template_data = (
+                None,  # id
+                bfm_no,  # bfm_no
+                template_name,  # template_name
+                pm_type,  # pm_type
+                json.dumps(checklist_items),  # checklist_json
+                None,  # special_instructions
+                None,  # safety_notes
+                est_hours,  # estimated_hours
+                None,  # created_date
+                None,  # updated_date
+                sap_no,  # sap_no
+                description,  # description
+                tool_id,  # tool_id
+                location  # location
+            )
+
+        else:
+            # Get custom template data
+            cursor.execute('''
+                SELECT pt.*, e.sap_material_no, e.description, e.tool_id_drawing_no, e.location
+                FROM pm_templates pt
+                LEFT JOIN equipment e ON pt.bfm_equipment_no = e.bfm_equipment_no
+                WHERE pt.bfm_equipment_no = %s AND pt.template_name = %s
+            ''', (bfm_no, template_name))
+
+            template_data = cursor.fetchone()
+            if not template_data:
+                messagebox.showerror("Error", "Template not found")
+                return
+
         try:
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            filename = f"Custom_PM_Template_{bfm_no}_{template_name.replace(' ', '_')}_{timestamp}.pdf"
-        
+            safe_template_name = template_name.replace('[Default] ', '').replace(' ', '_')
+            filename = f"PM_Template_{bfm_no}_{safe_template_name}_{timestamp}.pdf"
+
             # Create custom PDF using the template data
             self.create_custom_pm_template_pdf(filename, template_data)
-        
-            messagebox.showinfo("Success", f"Custom PM template exported to: {filename}")
-        
+
+            messagebox.showinfo("Success", f"PM template exported to: {filename}")
+
         except Exception as e:
             messagebox.showerror("Error", f"Failed to export template: {str(e)}")
 
