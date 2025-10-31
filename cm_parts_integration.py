@@ -260,6 +260,29 @@ class CMPartsIntegration:
 
                 # Record each consumed part
                 for part in consumed_parts:
+                    # Get unit price for cost calculation
+                    cursor.execute('''
+                        SELECT unit_price FROM mro_inventory WHERE part_number = %s
+                    ''', (part['part_number'],))
+                    result = cursor.fetchone()
+                    unit_price = result[0] if result else 0
+                    total_cost = part['quantity'] * unit_price
+
+                    # Insert into cm_parts_used table (for usage reports)
+                    cursor.execute('''
+                        INSERT INTO cm_parts_used
+                        (cm_number, part_number, quantity_used, total_cost, recorded_by, notes, recorded_date)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    ''', (
+                        cm_number,
+                        part['part_number'],
+                        part['quantity'],
+                        total_cost,
+                        technician_name,
+                        f"Consumed for CM {cm_number}",
+                        datetime.now()
+                    ))
+
                     # Create transaction record
                     cursor.execute('''
                         INSERT INTO mro_stock_transactions
