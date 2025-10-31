@@ -7307,27 +7307,101 @@ class AITCMMSSystem:
                 )
             ''')
 
-            # PERFORMANCE OPTIMIZATION: Create indexes for weekly_pm_schedules table
-            # These indexes dramatically speed up queries during weekly PM generation
-            print("CHECK: Creating performance indexes for weekly_pm_schedules...")
+            # PERFORMANCE OPTIMIZATION: Create comprehensive indexes for all tables
+            # These indexes dramatically improve query performance across the system
+            print("CHECK: Creating comprehensive performance indexes...")
 
-            # Index for uncompleted schedules query (bfm_equipment_no + pm_type + week_start_date)
+            # === Weekly PM Schedules Indexes ===
             cursor.execute('''
                 CREATE INDEX IF NOT EXISTS idx_weekly_pm_schedules_uncompleted
                 ON weekly_pm_schedules(bfm_equipment_no, pm_type, week_start_date)
                 WHERE status = 'Scheduled'
             ''')
 
-            # Index for week lookups with status filtering
             cursor.execute('''
                 CREATE INDEX IF NOT EXISTS idx_weekly_pm_schedules_week_status
                 ON weekly_pm_schedules(week_start_date, status)
             ''')
 
-            # Index for equipment lookups
             cursor.execute('''
                 CREATE INDEX IF NOT EXISTS idx_weekly_pm_schedules_equipment
                 ON weekly_pm_schedules(bfm_equipment_no)
+            ''')
+
+            # === Equipment Table Indexes ===
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_equipment_location
+                ON equipment(location)
+            ''')
+
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_equipment_status
+                ON equipment(status)
+            ''')
+
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_equipment_master_lin
+                ON equipment(master_lin)
+            ''')
+
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_equipment_active_location
+                ON equipment(status, location)
+                WHERE status = 'Active'
+            ''')
+
+            # === Corrective Maintenance Indexes ===
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_cm_status
+                ON corrective_maintenance(status)
+            ''')
+
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_cm_assigned_technician
+                ON corrective_maintenance(assigned_technician)
+            ''')
+
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_cm_priority
+                ON corrective_maintenance(priority)
+            ''')
+
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_cm_reported_date
+                ON corrective_maintenance(reported_date)
+            ''')
+
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_cm_open_by_technician
+                ON corrective_maintenance(assigned_technician, status, priority)
+                WHERE status != 'Closed'
+            ''')
+
+            # === PM Completions Indexes ===
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_pm_completions_equipment
+                ON pm_completions(bfm_equipment_no)
+            ''')
+
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_pm_completions_date
+                ON pm_completions(completion_date)
+            ''')
+
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_pm_completions_technician
+                ON pm_completions(technician_name)
+            ''')
+
+            # === Audit Log Indexes ===
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_audit_log_timestamp
+                ON audit_log(action_timestamp)
+            ''')
+
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_audit_log_user_table
+                ON audit_log(user_name, table_name, action_timestamp)
             ''')
 
             print("CHECK: Performance indexes created successfully!")
