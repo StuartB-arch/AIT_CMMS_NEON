@@ -11609,7 +11609,7 @@ class AITCMMSSystem:
         # Create closure dialog
         dialog = tk.Toplevel(self.root)
         dialog.title(f"Complete CM - {cm_number}")
-        dialog.geometry("700x600")
+        dialog.geometry("950x750")
         dialog.transient(self.root)
         dialog.grab_set()
     
@@ -11705,15 +11705,104 @@ class AITCMMSSystem:
                         row=row, column=0, columnspan=2, sticky='w', padx=30, pady=5)
         row += 1
     
-        ttk.Radiobutton(scrollable_frame, text="Yes, parts were used (will open parts dialog)", 
+        ttk.Radiobutton(scrollable_frame, text="Yes, parts were used (will open parts dialog)",
                     variable=parts_used_var, value="Yes").grid(
                         row=row, column=0, columnspan=2, sticky='w', padx=30, pady=5)
         row += 1
-    
+
         # Button frame
         button_frame = ttk.Frame(dialog)
         button_frame.pack(fill='x', padx=10, pady=10)
-    
+
+        def gather_form_values():
+            """Validate required fields and return a dict of form values, or None if invalid"""
+            # Validate required fields
+            if not completion_date_var.get().strip():
+                messagebox.showerror("Error", "Completion date is required")
+                return None
+            # Accept multiple common date formats and normalize to YYYY-MM-DD
+            date_input = completion_date_var.get().strip()
+            parsed_date = None
+            for fmt in ('%Y-%m-%d', '%m/%d/%Y', '%m/%d/%y', '%m-%d-%Y', '%m-%d-%y'):
+                try:
+                    parsed_date = datetime.strptime(date_input, fmt)
+                    break
+                except ValueError:
+                    continue
+            if not parsed_date:
+                messagebox.showerror("Error", "Invalid date. Use YYYY-MM-DD or MM/DD/YY.")
+                return None
+            if not labor_hours_var.get().strip():
+                messagebox.showerror("Error", "Labor hours is required")
+                return None
+            try:
+                labor_hrs_value = float(labor_hours_var.get())
+                if labor_hrs_value < 0:
+                    messagebox.showerror("Error", "Labor hours cannot be negative")
+                    return None
+            except ValueError:
+                messagebox.showerror("Error", "Invalid labor hours value")
+                return None
+            root_cause_value = root_cause_text.get('1.0', 'end-1c').strip()
+            if not root_cause_value:
+                messagebox.showerror("Error", "Root cause is required")
+                return None
+            corr_action_value = corr_action_text.get('1.0', 'end-1c').strip()
+            if not corr_action_value:
+                messagebox.showerror("Error", "Corrective action is required")
+                return None
+            additional_notes = notes_text.get('1.0', 'end-1c').strip()
+            return {
+                'completion_date': parsed_date.strftime('%Y-%m-%d'),
+                'labor_hours': labor_hrs_value,
+                'root_cause': root_cause_value,
+                'corrective_action': corr_action_value,
+                'notes': additional_notes,
+            }
+
+        def finalize_closure(form_values, parts_recorded):
+            """Finalize CM closure after parts handling"""
+            if not parts_recorded and parts_used_var.get() == "Yes":
+                # User cancelled parts dialog, don't close CM
+                return
+
+            try:
+                cursor = self.conn.cursor()
+
+                # Update CM record
+                cursor.execute('''
+                    UPDATE corrective_maintenance
+                    SET status = 'Closed',
+                        completion_date = %s,
+                        labor_hours = %s,
+                        root_cause = %s,
+                        corrective_action = %s,
+                        notes = %s
+                    WHERE cm_number = %s
+                ''', (
+                    form_values['completion_date'],
+                    form_values['labor_hours'],
+                    form_values['root_cause'],
+                    form_values['corrective_action'],
+                    form_values['notes'],
+                    cm_number
+                ))
+
+                self.conn.commit()
+
+                messagebox.showinfo("Success",
+                    f"CM {cm_number} completed successfully!\n\n"
+                    f"Completion Date: {form_values['completion_date']}\n"
+                    f"Labor Hours: {form_values['labor_hours']}\n"
+                    f"Status: Closed")
+
+                dialog.destroy()
+                self.load_corrective_maintenance()
+
+            except Exception as e:
+                self.conn.rollback()
+                messagebox.showerror("Error", f"Failed to complete CM: {str(e)}")
+
         def validate_and_proceed():
             """Validate closure form and proceed to parts or close"""
             form_values = gather_form_values()
