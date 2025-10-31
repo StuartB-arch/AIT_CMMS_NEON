@@ -195,7 +195,7 @@ class CMPartsIntegration:
             values = item['values']
             part_num = values[0]
             desc = values[1]
-            qty_available = values[3]
+            qty_available = float(values[3])  # Convert to float for comparison
 
             if qty_used > qty_available:
                 messagebox.showerror("Error",
