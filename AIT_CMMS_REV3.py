@@ -3,24 +3,16 @@
 AIT Complete CMMS - Computerized Maintenance Management System
 Fully functional CMMS with automatic PM scheduling, technician assignment, and comprehensive reporting
 """
+# Core imports - lightweight and essential
 from datetime import datetime, timedelta
-from mro_stock_module import MROStockManager
-from cm_parts_integration import CMPartsIntegration
 from database_utils import db_pool, UserManager, AuditLogger, OptimisticConcurrencyControl, TransactionManager
 import shutil
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
-import pandas as pd
 import psycopg2
 from psycopg2 import sql, extras
-from datetime import datetime, timedelta
 import json
 import os
-from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import inch
-from reportlab.lib import colors
 import calendar
 import random
 import math
@@ -30,16 +22,69 @@ from typing import List, Dict, Optional, Tuple, NamedTuple
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
-try:
-    from reportlab.lib.pagesizes import letter
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib.units import inch
-    from reportlab.lib import colors
-    REPORTLAB_AVAILABLE = True
-except ImportError:
-    REPORTLAB_AVAILABLE = False
-    print("ReportLab not installed. PDF generation will not work.")
+
+# Lazy imports for heavy modules - only loaded when needed
+_pandas = None
+_reportlab_available = None
+_mro_manager_class = None
+_cm_parts_class = None
+
+def get_pandas():
+    """Lazy load pandas"""
+    global _pandas
+    if _pandas is None:
+        import pandas as pd
+        _pandas = pd
+    return _pandas
+
+def get_reportlab():
+    """Lazy load reportlab modules"""
+    global _reportlab_available
+    if _reportlab_available is None:
+        try:
+            from reportlab.lib.pagesizes import letter
+            from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle, PageBreak
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.lib.units import inch
+            from reportlab.lib import colors
+            _reportlab_available = {
+                'letter': letter,
+                'SimpleDocTemplate': SimpleDocTemplate,
+                'Paragraph': Paragraph,
+                'Spacer': Spacer,
+                'Image': Image,
+                'Table': Table,
+                'TableStyle': TableStyle,
+                'PageBreak': PageBreak,
+                'getSampleStyleSheet': getSampleStyleSheet,
+                'ParagraphStyle': ParagraphStyle,
+                'inch': inch,
+                'colors': colors,
+                'available': True
+            }
+        except ImportError:
+            _reportlab_available = {'available': False}
+            print("ReportLab not installed. PDF generation will not work.")
+    return _reportlab_available
+
+def get_mro_manager():
+    """Lazy load MRO Stock Manager"""
+    global _mro_manager_class
+    if _mro_manager_class is None:
+        from mro_stock_module import MROStockManager
+        _mro_manager_class = MROStockManager
+    return _mro_manager_class
+
+def get_cm_parts_integration():
+    """Lazy load CM Parts Integration"""
+    global _cm_parts_class
+    if _cm_parts_class is None:
+        from cm_parts_integration import CMPartsIntegration
+        _cm_parts_class = CMPartsIntegration
+    return _cm_parts_class
+
+# Check reportlab availability flag
+REPORTLAB_AVAILABLE = True  # Will be set properly when first accessed
 
 class PMType(Enum):
     MONTHLY = "Monthly"
@@ -697,6 +742,7 @@ class PMSchedulingService:
 
                 try:
                     # Read CSV file
+                    pd = get_pandas()  # Lazy load pandas
                     df = pd.read_csv(filepath, encoding='utf-8-sig')
 
                     # Check if BFM column exists
@@ -4873,9 +4919,10 @@ class AITCMMSSystem:
 
         # ===== Initialize Database Connection Pool BEFORE Login =====
         # This must happen before login dialog because login needs database access
+        # OPTIMIZED: Start with minimal connections, pool grows on demand
         print("Starting AIT CMMS Application...")
         try:
-            db_pool.initialize(self.DB_CONFIG, min_conn=2, max_conn=10)
+            db_pool.initialize(self.DB_CONFIG, min_conn=1, max_conn=10)
             print("Database connection pool initialized successfully")
         except Exception as e:
             messagebox.showerror("Database Error",
@@ -4890,8 +4937,11 @@ class AITCMMSSystem:
 
         # ===== Initialize PostgreSQL Database =====
         self.init_database()
-        self.mro_manager = MROStockManager(self)
-        self.parts_integration = CMPartsIntegration(self)
+
+        # OPTIMIZED: Defer heavy module initialization - load on first use
+        self._mro_manager = None
+        self._parts_integration = None
+
         self.init_pm_templates_database()
 
         # Add logo header
@@ -4931,6 +4981,24 @@ class AITCMMSSystem:
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
         self.setup_program_colors()
         print(f"AIT Complete CMMS System initialized successfully for {self.user_name} ({self.current_user_role})")
+
+    @property
+    def mro_manager(self):
+        """Lazy load MRO Stock Manager on first access"""
+        if self._mro_manager is None:
+            MROStockManager = get_mro_manager()
+            self._mro_manager = MROStockManager(self)
+            print("MRO Stock Manager loaded on demand")
+        return self._mro_manager
+
+    @property
+    def parts_integration(self):
+        """Lazy load Parts Integration on first access"""
+        if self._parts_integration is None:
+            CMPartsIntegration = get_cm_parts_integration()
+            self._parts_integration = CMPartsIntegration(self)
+            print("CM Parts Integration loaded on demand")
+        return self._parts_integration
 
     def _deferred_startup_tasks(self):
         """Load data after UI is displayed to keep startup responsive"""
