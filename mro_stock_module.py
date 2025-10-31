@@ -12,6 +12,7 @@ from PIL import Image, ImageTk
 import shutil
 import csv
 import io
+from database_utils import db_pool
 
 class MROStockManager:
     """MRO (Maintenance, Repair, Operations) Stock Management"""
@@ -579,41 +580,40 @@ class MROStockManager:
                     with open(pic2_path, 'rb') as f:
                         pic2_data = f.read()
 
-                # Insert into database
-                cursor = self.conn.cursor()
-
+                # Insert into database using connection pool
                 notes_text = fields['notes'].get('1.0', 'end-1c') if 'notes' in fields else ''
 
-                cursor.execute('''
-                    INSERT INTO mro_inventory (
-                        name, part_number, model_number, equipment, engineering_system,
-                        unit_of_measure, quantity_in_stock, unit_price, minimum_stock,
-                        supplier, location, rack, row, bin, picture_1_path, picture_2_path,
-                        picture_1_data, picture_2_data, notes
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ''', (
-                    fields['name'].get(),
-                    fields['part_number'].get(),
-                    fields['model_number'].get(),
-                    fields['equipment'].get(),
-                    fields['engineering_system'].get(),
-                    fields['unit_of_measure'].get(),
-                    float(fields['quantity_in_stock'].get() or 0),
-                    float(fields['unit_price'].get() or 0),
-                    float(fields['minimum_stock'].get() or 0),
-                    fields['supplier'].get(),
-                    fields['location'].get(),
-                    fields['rack'].get(),
-                    fields['row'].get(),
-                    fields['bin'].get(),
-                    pic1_path,
-                    pic2_path,
-                    pic1_data,
-                    pic2_data,
-                    notes_text
-                ))
+                # Use connection pool to avoid SSL timeout issues
+                with db_pool.get_cursor(commit=True) as cursor:
+                    cursor.execute('''
+                        INSERT INTO mro_inventory (
+                            name, part_number, model_number, equipment, engineering_system,
+                            unit_of_measure, quantity_in_stock, unit_price, minimum_stock,
+                            supplier, location, rack, row, bin, picture_1_path, picture_2_path,
+                            picture_1_data, picture_2_data, notes
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ''', (
+                        fields['name'].get(),
+                        fields['part_number'].get(),
+                        fields['model_number'].get(),
+                        fields['equipment'].get(),
+                        fields['engineering_system'].get(),
+                        fields['unit_of_measure'].get(),
+                        float(fields['quantity_in_stock'].get() or 0),
+                        float(fields['unit_price'].get() or 0),
+                        float(fields['minimum_stock'].get() or 0),
+                        fields['supplier'].get(),
+                        fields['location'].get(),
+                        fields['rack'].get(),
+                        fields['row'].get(),
+                        fields['bin'].get(),
+                        pic1_path,
+                        pic2_path,
+                        pic1_data,
+                        pic2_data,
+                        notes_text
+                    ))
 
-                self.conn.commit()
                 messagebox.showinfo("Success", "Part added successfully!")
                 dialog.destroy()
                 self.refresh_mro_list()
@@ -622,6 +622,14 @@ class MROStockManager:
                 error_msg = str(e).lower()
                 if 'unique constraint' in error_msg or 'duplicate' in error_msg or 'already exists' in error_msg:
                     messagebox.showerror("Error", "Part number already exists!")
+                elif 'ssl' in error_msg or 'connection' in error_msg:
+                    messagebox.showerror("Database Connection Error",
+                        "Failed to connect to database. This may be due to:\n"
+                        "• Network connectivity issues\n"
+                        "• SSL certificate problems\n"
+                        "• Database timeout\n\n"
+                        f"Technical details: {str(e)}\n\n"
+                        "Please try again. If the problem persists, contact IT support.")
                 else:
                     messagebox.showerror("Error", f"Failed to add part: {str(e)}")
     
