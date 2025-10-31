@@ -33,7 +33,7 @@ class DatabaseConnectionPool:
 
     def initialize(self, db_config, min_conn=2, max_conn=10):
         """
-        Initialize the connection pool
+        Initialize the connection pool with keepalive settings
 
         Args:
             db_config: Dictionary with connection parameters
@@ -50,15 +50,44 @@ class DatabaseConnectionPool:
                 database=db_config['database'],
                 user=db_config['user'],
                 password=db_config['password'],
-                sslmode=db_config.get('sslmode', 'require')
+                sslmode=db_config.get('sslmode', 'require'),
+                # TCP Keepalive settings to prevent connection timeouts
+                keepalives=1,              # Enable TCP keepalive
+                keepalives_idle=30,        # Start keepalive after 30 seconds of idle
+                keepalives_interval=10,    # Send keepalive every 10 seconds
+                keepalives_count=5,        # Close connection after 5 failed keepalives
+                # Connection timeout settings
+                connect_timeout=10         # 10 second connection timeout
             )
-            print(f"Connection pool initialized: {min_conn}-{max_conn} connections")
+            print(f"Connection pool initialized: {min_conn}-{max_conn} connections with keepalive enabled")
 
     def get_connection(self):
-        """Get a connection from the pool"""
+        """Get a connection from the pool with validation"""
         if self.pool is None:
             raise Exception("Connection pool not initialized. Call initialize() first.")
-        return self.pool.getconn()
+
+        conn = self.pool.getconn()
+
+        # Validate connection is still alive before returning it
+        try:
+            # Quick test query to check if connection is valid
+            cursor = conn.cursor()
+            cursor.execute("SELECT 1")
+            cursor.fetchone()
+            cursor.close()
+            # End the transaction created by SELECT query
+            conn.commit()
+        except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
+            # Connection is dead, close it and get a new one
+            print(f"Connection validation failed: {e}. Getting new connection...")
+            try:
+                conn.close()
+            except:
+                pass
+            # Get a fresh connection
+            conn = self.pool.getconn()
+
+        return conn
 
     def return_connection(self, conn):
         """Return a connection to the pool"""
@@ -75,7 +104,7 @@ class DatabaseConnectionPool:
     @contextmanager
     def get_cursor(self, commit=True):
         """
-        Context manager for database operations
+        Context manager for database operations with automatic retry on connection failure
 
         Args:
             commit: Whether to commit automatically on success
@@ -88,20 +117,46 @@ class DatabaseConnectionPool:
                 cursor.execute("SELECT * FROM equipment")
                 data = cursor.fetchall()
         """
-        conn = self.get_connection()
+        conn = self.get_connection()  # This now validates the connection
         cursor = None
         try:
             cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
             yield cursor
             if commit:
                 conn.commit()
+        except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
+            # Connection lost during operation - close bad connection
+            print(f"Connection error during operation: {e}")
+            if cursor:
+                try:
+                    cursor.close()
+                except:
+                    pass
+            try:
+                conn.rollback()
+            except:
+                pass
+            # Don't return bad connection to pool, close it
+            try:
+                conn.close()
+            except:
+                pass
+            raise Exception(f"Database connection lost: {str(e)}. Please retry the operation.")
         except Exception as e:
-            conn.rollback()
+            try:
+                conn.rollback()
+            except:
+                pass
             raise e
         finally:
             if cursor:
-                cursor.close()
-            self.return_connection(conn)
+                try:
+                    cursor.close()
+                except:
+                    pass
+            # Only return connection if it wasn't closed due to error
+            if conn and not conn.closed:
+                self.return_connection(conn)
 
 
 class OptimisticConcurrencyControl:
