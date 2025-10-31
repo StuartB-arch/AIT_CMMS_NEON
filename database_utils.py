@@ -75,6 +75,8 @@ class DatabaseConnectionPool:
             cursor.execute("SELECT 1")
             cursor.fetchone()
             cursor.close()
+            # End the transaction created by SELECT query
+            conn.commit()
         except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
             # Connection is dead, close it and get a new one
             print(f"Connection validation failed: {e}. Getting new connection...")
