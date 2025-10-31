@@ -2433,6 +2433,12 @@ class AITCMMSSystem:
                 # Update status bar
                 if hasattr(self, 'update_status'):
                     self.update_status(f"CHECK: New CM created: {cm_number_var.get()} for {bfm_var.get()}")
+                
+                # Prompt for parts request
+                try:
+                    self.prompt_parts_required(cm_number_var.get(), bfm_var.get(), assigned_var.get())
+                except Exception as _e:
+                    pass
         
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to create CM: {str(e)}")
@@ -2469,6 +2475,187 @@ class AITCMMSSystem:
             next_num = 1
 
         return f"CM-{today}-{next_num:04d}"
+
+
+    def prompt_parts_required(self, cm_number, bfm_no, technician_name):
+        """Ask technician if parts are required for this CM and open request form if yes"""
+        try:
+            answer = messagebox.askyesno(
+                "Parts Required?",
+                "Are parts required to complete this CM?\n\nIf yes, you'll be prompted to request parts (Part #, Model #, Website)."
+            )
+            if answer:
+                self.open_parts_request_form(cm_number, bfm_no, technician_name)
+        except Exception as e:
+            print(f"Parts prompt error: {e}")
+
+    def open_parts_request_form(self, cm_number, bfm_no, technician_name):
+        """Open a dialog to capture parts request details and send to coordinator"""
+        dialog = tk.Toplevel(self.root)
+        dialog.title(f"Parts Request for {cm_number}")
+        dialog.geometry("750x520")
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        header = ttk.Label(dialog, text=f"Request Parts for CM {cm_number} (BFM: {bfm_no})", font=('Arial', 12, 'bold'))
+        header.pack(pady=10)
+
+        # Table-like entry area for multiple items
+        table_frame = ttk.LabelFrame(dialog, text="Requested Parts", padding=10)
+        table_frame.pack(fill='both', expand=True, padx=10, pady=10)
+
+        columns = ("Part Number", "Model Number", "Website (optional)")
+        tree = ttk.Treeview(table_frame, columns=columns, show='headings', height=7)
+        for col, w in zip(columns, (160, 160, 300)):
+            tree.heading(col, text=col)
+            tree.column(col, width=w)
+
+        vsb = ttk.Scrollbar(table_frame, orient='vertical', command=tree.yview)
+        tree.configure(yscrollcommand=vsb.set)
+        tree.grid(row=0, column=0, sticky='nsew')
+        vsb.grid(row=0, column=1, sticky='ns')
+        table_frame.grid_rowconfigure(0, weight=1)
+        table_frame.grid_columnconfigure(0, weight=1)
+
+        # Entry row
+        entry_frame = ttk.Frame(dialog)
+        entry_frame.pack(fill='x', padx=10, pady=(0,10))
+        part_var = tk.StringVar()
+        model_var = tk.StringVar()
+        site_var = tk.StringVar()
+        ttk.Label(entry_frame, text="Part #:").pack(side='left', padx=(0,5))
+        ttk.Entry(entry_frame, textvariable=part_var, width=20).pack(side='left', padx=(0,10))
+        ttk.Label(entry_frame, text="Model #:").pack(side='left', padx=(0,5))
+        ttk.Entry(entry_frame, textvariable=model_var, width=20).pack(side='left', padx=(0,10))
+        ttk.Label(entry_frame, text="Website:").pack(side='left', padx=(0,5))
+        ttk.Entry(entry_frame, textvariable=site_var, width=40).pack(side='left', padx=(0,10))
+
+        def add_item():
+            pn = part_var.get().strip()
+            if not pn:
+                messagebox.showerror("Missing Part #", "Please enter a Part Number")
+                return
+            tree.insert('', 'end', values=(pn, model_var.get().strip(), site_var.get().strip()))
+            part_var.set(''); model_var.set(''); site_var.set('')
+
+        ttk.Button(entry_frame, text="Add", command=add_item).pack(side='left')
+
+        # Notes
+        notes_frame = ttk.LabelFrame(dialog, text="Notes (optional)", padding=8)
+        notes_frame.pack(fill='x', padx=10, pady=5)
+        notes_text = tk.Text(notes_frame, width=90, height=3)
+        notes_text.pack(fill='x')
+
+        def on_submit():
+            items = [tree.item(i)['values'] for i in tree.get_children()]
+            if not items:
+                messagebox.showerror("No Items", "Please add at least one requested part")
+                return
+            try:
+                # Persist requests
+                cursor = self.conn.cursor()
+                today = datetime.now().strftime('%Y-%m-%d')
+                for vals in items:
+                    part_no = vals[0] if len(vals) > 0 else ''
+                    model_no = vals[1] if len(vals) > 1 else ''
+                    website = vals[2] if len(vals) > 2 else ''
+                    cursor.execute('''
+                        INSERT INTO cm_parts_requests
+                        (cm_number, bfm_equipment_no, part_number, model_number, website, requested_by, requested_date, notes)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    ''', (cm_number, bfm_no, part_no, model_no, website, technician_name, today, notes_text.get('1.0', 'end-1c').strip()))
+                self.conn.commit()
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to save parts request: {e}")
+                return
+
+            # Attempt to send email
+            try:
+                sent = self.send_parts_request_email(cm_number, bfm_no, technician_name, items, notes_text.get('1.0', 'end-1c').strip())
+                if sent:
+                    # Mark sent
+                    cursor = self.conn.cursor()
+                    cursor.execute('''
+                        UPDATE cm_parts_requests SET email_sent = TRUE, email_sent_at = CURRENT_TIMESTAMP
+                        WHERE cm_number = %s
+                    ''', (cm_number,))
+                    self.conn.commit()
+                    messagebox.showinfo("Sent", "Parts request emailed to Parts Coordinator.")
+                else:
+                    messagebox.showwarning("Email Not Sent", "Saved request, but email could not be sent automatically. A draft will be shown.")
+            except Exception as e:
+                messagebox.showwarning("Email Error", f"Saved request, but email failed: {e}")
+
+            dialog.destroy()
+
+        # Buttons
+        btn_frame = ttk.Frame(dialog)
+        btn_frame.pack(fill='x', padx=10, pady=10)
+        ttk.Button(btn_frame, text="Submit Request", command=on_submit).pack(side='left')
+        ttk.Button(btn_frame, text="Cancel", command=dialog.destroy).pack(side='right')
+
+    def send_parts_request_email(self, cm_number, bfm_no, technician_name, items, notes):
+        """Send an email to the Parts Coordinator with requested parts. Returns True if sent."""
+        try:
+            import smtplib
+            from email.mime.text import MIMEText
+            from email.mime.multipart import MIMEMultipart
+
+            to_addr = 'Ashica.Penson@aint.com'
+            subject = f"Parts Request for {cm_number} (BFM {bfm_no})"
+
+            lines = [
+                f"CM Number: {cm_number}",
+                f"BFM Equipment: {bfm_no}",
+                f"Requested by: {technician_name}",
+                f"Requested date: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+                "",
+                "Requested Parts:",
+            ]
+            for idx, vals in enumerate(items, start=1):
+                part_no = vals[0] if len(vals) > 0 else ''
+                model_no = vals[1] if len(vals) > 1 else ''
+                site = vals[2] if len(vals) > 2 else ''
+                lines.append(f"{idx}. Part #: {part_no} | Model #: {model_no} | Website: {site}")
+            if notes and notes.strip():
+                lines.extend(["", "Notes:", notes.strip()])
+
+            body = "\n".join(lines)
+
+            msg = MIMEMultipart()
+            msg['Subject'] = subject
+            msg['To'] = to_addr
+            # If the system knows a from address, set it; otherwise leave blank and rely on relay
+            from_addr = getattr(self, 'system_from_email', None) or 'no-reply@ait-cmms.local'
+            msg['From'] = from_addr
+            msg.attach(MIMEText(body, 'plain'))
+
+            # Attempt to send via local relay; adjust as needed in deployment
+            try:
+                with smtplib.SMTP('localhost') as server:
+                    server.sendmail(from_addr, [to_addr], msg.as_string())
+                return True
+            except Exception:
+                # Fallback: try common Microsoft 365 relay host if configured via env
+                import os
+                host = os.environ.get('CMMS_SMTP_HOST')
+                port = int(os.environ.get('CMMS_SMTP_PORT', '25'))
+                if host:
+                    with smtplib.SMTP(host, port) as server:
+                        server.sendmail(from_addr, [to_addr], msg.as_string())
+                    return True
+                # As a last resort, open a mailto draft for the user
+                try:
+                    import webbrowser
+                    import urllib.parse
+                    mailto = f"mailto:{to_addr}?subject={urllib.parse.quote(subject)}&body={urllib.parse.quote(body)}"
+                    webbrowser.open(mailto)
+                except Exception:
+                    pass
+                return False
+        except Exception as e:
+            print(f"Email error: {e}")
+            return False
 
     
     
@@ -4720,7 +4907,7 @@ class AITCMMSSystem:
         }
     
         # Weekly PM target
-        self.weekly_pm_target = 160
+        self.weekly_pm_target = 130
     
         # Initialize data storage
         self.equipment_data = []
@@ -4904,13 +5091,139 @@ class AITCMMSSystem:
         row += 1
     
         parts_used_var = tk.StringVar(value="No")
+        parts_dialog_state = {'open': False}
+
+        def gather_form_values():
+            """Validate required fields and return a dict of form values, or None if invalid"""
+            # Validate required fields
+            if not completion_date_var.get().strip():
+                messagebox.showerror("Error", "Completion date is required")
+                return None
+            # Accept multiple common date formats and normalize to YYYY-MM-DD
+            date_input = completion_date_var.get().strip()
+            parsed_date = None
+            for fmt in ('%Y-%m-%d', '%m/%d/%Y', '%m/%d/%y', '%m-%d-%Y', '%m-%d-%y'):
+                try:
+                    parsed_date = datetime.strptime(date_input, fmt)
+                    break
+                except ValueError:
+                    continue
+            if not parsed_date:
+                messagebox.showerror("Error", "Invalid date. Use YYYY-MM-DD or MM/DD/YY.")
+                return None
+            if not labor_hours_var.get().strip():
+                messagebox.showerror("Error", "Labor hours is required")
+                return None
+            try:
+                labor_hrs_value = float(labor_hours_var.get())
+                if labor_hrs_value < 0:
+                    messagebox.showerror("Error", "Labor hours cannot be negative")
+                    return None
+            except ValueError:
+                messagebox.showerror("Error", "Invalid labor hours value")
+                return None
+            root_cause_value = root_cause_text.get('1.0', 'end-1c').strip()
+            if not root_cause_value:
+                messagebox.showerror("Error", "Root cause is required")
+                return None
+            corr_action_value = corr_action_text.get('1.0', 'end-1c').strip()
+            if not corr_action_value:
+                messagebox.showerror("Error", "Corrective action is required")
+                return None
+            additional_notes = notes_text.get('1.0', 'end-1c').strip()
+            return {
+                'completion_date': parsed_date.strftime('%Y-%m-%d'),
+                'labor_hours': labor_hrs_value,
+                'root_cause': root_cause_value,
+                'corrective_action': corr_action_value,
+                'notes': additional_notes,
+            }
+
+        def finalize_closure(form_values, parts_recorded):
+            """Finalize CM closure after parts handling"""
+            if not parts_recorded and parts_used_var.get() == "Yes":
+                # User cancelled parts dialog, don't close CM
+                parts_dialog_state['open'] = False
+                return
+
+            try:
+                cursor = self.conn.cursor()
+
+                # Update CM record
+                cursor.execute('''
+                    UPDATE corrective_maintenance
+                    SET status = 'Closed',
+                        completion_date = %s,
+                        labor_hours = %s,
+                        root_cause = %s,
+                        corrective_action = %s,
+                        notes = %s
+                    WHERE cm_number = %s
+                ''', (
+                    form_values['completion_date'],
+                    form_values['labor_hours'],
+                    form_values['root_cause'],
+                    form_values['corrective_action'],
+                    form_values['notes'],
+                    cm_number
+                ))
+
+                self.conn.commit()
+
+                messagebox.showinfo("Success", 
+                    f"CM {cm_number} completed successfully!\n\n"
+                    f"Completion Date: {form_values['completion_date']}\n"
+                    f"Labor Hours: {form_values['labor_hours']}\n"
+                    f"Status: Closed")
+
+                parts_dialog_state['open'] = False
+                dialog.destroy()
+                self.load_corrective_maintenance()
+
+            except Exception as e:
+                parts_dialog_state['open'] = False
+                self.conn.rollback()
+                messagebox.showerror("Error", f"Failed to complete CM: {str(e)}")
+
+        def on_parts_choice():
+            # Open parts dialog immediately when selecting Yes; prevent multiple openings
+            try:
+                if parts_used_var.get() == "Yes" and not parts_dialog_state['open']:
+                    form_values = gather_form_values()
+                    if form_values is None:
+                        # Revert choice if form invalid
+                        parts_used_var.set("No")
+                        return
+                    if hasattr(self, 'parts_integration'):
+                        parts_dialog_state['open'] = True
+                        # Open without closing this form; user can return and complete later
+                        dlg = self.parts_integration.show_parts_consumption_dialog(
+                            cm_number=cm_number,
+                            technician_name=tech or 'Unknown',
+                            callback=lambda success: finalize_closure(form_values, success)
+                        )
+                        # If the integration returns a dialog, track its close to reset flag
+                        try:
+                            if dlg is not None:
+                                dlg.bind("<Destroy>", lambda e: parts_dialog_state.update({'open': False}))
+                            else:
+                                # If no dialog object is returned, reset immediately so user can open again
+                                parts_dialog_state['open'] = False
+                        except Exception:
+                            parts_dialog_state['open'] = False
+                    else:
+                        messagebox.showerror("Error", 
+                            "Parts integration module not initialized.\nPlease contact system administrator.")
+            except Exception:
+                parts_dialog_state['open'] = False
+
         ttk.Radiobutton(scrollable_frame, text="No parts were used", 
-                    variable=parts_used_var, value="No").grid(
+                    variable=parts_used_var, value="No", command=on_parts_choice).grid(
                         row=row, column=0, columnspan=2, sticky='w', padx=30, pady=5)
         row += 1
     
         ttk.Radiobutton(scrollable_frame, text="Yes, parts were used (will open parts dialog)", 
-                    variable=parts_used_var, value="Yes").grid(
+                    variable=parts_used_var, value="Yes", command=on_parts_choice).grid(
                         row=row, column=0, columnspan=2, sticky='w', padx=30, pady=5)
         row += 1
     
@@ -6797,6 +7110,41 @@ class AITCMMSSystem:
                     FOREIGN KEY (bfm_equipment_no) REFERENCES equipment (bfm_equipment_no)
                 )
             ''')
+        
+            # CM Parts Requests table (for requesting parts during CM creation)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS cm_parts_requests (
+                    id SERIAL PRIMARY KEY,
+                    cm_number TEXT NOT NULL,
+                    bfm_equipment_no TEXT,
+                    part_number TEXT NOT NULL,
+                    model_number TEXT,
+                    website TEXT,
+                    requested_by TEXT,
+                    requested_date TEXT,
+                    notes TEXT,
+                    email_sent BOOLEAN DEFAULT FALSE,
+                    email_sent_at TIMESTAMP,
+                    created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (cm_number) REFERENCES corrective_maintenance (cm_number)
+                )
+            ''')
+
+            # Ensure FK uses ON DELETE CASCADE so linked part requests are removed with the CM
+            try:
+                cursor.execute('''
+                    ALTER TABLE cm_parts_requests
+                    DROP CONSTRAINT IF EXISTS cm_parts_requests_cm_number_fkey
+                ''')
+                cursor.execute('''
+                    ALTER TABLE cm_parts_requests
+                    ADD CONSTRAINT cm_parts_requests_cm_number_fkey
+                    FOREIGN KEY (cm_number)
+                    REFERENCES corrective_maintenance (cm_number)
+                    ON DELETE CASCADE
+                ''')
+            except Exception as e:
+                print(f"Note: Unable to update cm_parts_requests FK to ON DELETE CASCADE: {e}")
         
             # Work Orders table
             cursor.execute('''
@@ -10948,6 +11296,12 @@ class AITCMMSSystem:
                                 f"Assigned to: {assigned_var.get()}")
                 dialog.destroy()
                 self.load_corrective_maintenance()
+                
+                # Prompt for parts request
+                try:
+                    self.prompt_parts_required(cm_number_var.get(), bfm_var.get(), assigned_var.get())
+                except Exception as _e:
+                    pass
         
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to create CM: {str(e)}")
@@ -11152,6 +11506,10 @@ class AITCMMSSystem:
                 self.load_corrective_maintenance()
 
             except Exception as e:
+                try:
+                    self.conn.rollback()
+                except Exception:
+                    pass
                 messagebox.showerror("Error", f"Failed to update CM: {str(e)}")
 
         def delete_cm():
@@ -11161,12 +11519,20 @@ class AITCMMSSystem:
             if result:
                 try:
                     cursor = self.conn.cursor()
+                    # First delete any child part requests (defensive; FK now also cascades)
+                    cursor.execute('DELETE FROM cm_parts_requests WHERE cm_number = %s', (orig_cm_number,))
+                    # Then delete the CM itself
                     cursor.execute('DELETE FROM corrective_maintenance WHERE cm_number = %s', (orig_cm_number,))
                     self.conn.commit()
                     messagebox.showinfo("Success", f"CM {orig_cm_number} deleted successfully!")
                     dialog.destroy()
                     self.load_corrective_maintenance()
                 except Exception as e:
+                    # Roll back so the connection is not left in an aborted state
+                    try:
+                        self.conn.rollback()
+                    except Exception:
+                        pass
                     messagebox.showerror("Error", f"Failed to delete CM: {str(e)}")
 
         # Buttons frame
@@ -11350,86 +11716,9 @@ class AITCMMSSystem:
     
         def validate_and_proceed():
             """Validate closure form and proceed to parts or close"""
-            # Validate required fields
-            if not completion_date_var.get().strip():
-                messagebox.showerror("Error", "Completion date is required")
+            form_values = gather_form_values()
+            if form_values is None:
                 return
-        
-            try:
-                datetime.strptime(completion_date_var.get(), '%Y-%m-%d')
-            except ValueError:
-                messagebox.showerror("Error", "Invalid date format. Use YYYY-MM-DD")
-                return
-        
-            if not labor_hours_var.get().strip():
-                messagebox.showerror("Error", "Labor hours is required")
-                return
-        
-            try:
-                labor_hrs_value = float(labor_hours_var.get())
-                if labor_hrs_value < 0:
-                    messagebox.showerror("Error", "Labor hours cannot be negative")
-                    return
-            except ValueError:
-                messagebox.showerror("Error", "Invalid labor hours value")
-                return
-        
-            root_cause_value = root_cause_text.get('1.0', 'end-1c').strip()
-            if not root_cause_value:
-                messagebox.showerror("Error", "Root cause is required")
-                return
-        
-            corr_action_value = corr_action_text.get('1.0', 'end-1c').strip()
-            if not corr_action_value:
-                messagebox.showerror("Error", "Corrective action is required")
-                return
-        
-            # Get all form values
-            completion_date = completion_date_var.get()
-            labor_hours = float(labor_hours_var.get())
-            root_cause = root_cause_value
-            corrective_action = corr_action_value
-            additional_notes = notes_text.get('1.0', 'end-1c').strip()
-            
-            # Combine notes
-            all_notes = additional_notes
-        
-            def finalize_closure(parts_recorded):
-                """Finalize CM closure after parts handling"""
-                if not parts_recorded and parts_used_var.get() == "Yes":
-                    # User cancelled parts dialog, don't close CM
-                    return
-            
-                try:
-                    cursor = self.conn.cursor()
-                
-                    # Update CM record
-                    cursor.execute('''
-                        UPDATE corrective_maintenance
-                        SET status = 'Closed',
-                            completion_date = %s,
-                            labor_hours = %s,
-                            root_cause = %s,
-                            corrective_action = %s,
-                            notes = %s
-                        WHERE cm_number = %s
-                    ''', (completion_date, labor_hours, root_cause, 
-                        corrective_action, all_notes, cm_number))
-                
-                    self.conn.commit()
-                
-                    messagebox.showinfo("Success", 
-                        f"CM {cm_number} completed successfully!\n\n"
-                        f"Completion Date: {completion_date}\n"
-                        f"Labor Hours: {labor_hours}\n"
-                        f"Status: Closed")
-                
-                    dialog.destroy()
-                    self.load_corrective_maintenance()
-                
-                except Exception as e:
-                    self.conn.rollback()
-                    messagebox.showerror("Error", f"Failed to complete CM: {str(e)}")
             
             # Check if parts were used
             if parts_used_var.get() == "Yes":
@@ -11442,17 +11731,17 @@ class AITCMMSSystem:
                     self.parts_integration.show_parts_consumption_dialog(
                         cm_number=cm_number,
                         technician_name=tech or 'Unknown',
-                        callback=finalize_closure
+                        callback=lambda success: finalize_closure(form_values, success)
                     )
                 else:
                     messagebox.showerror("Error", 
                         "Parts integration module not initialized.\n"
                         "Please contact system administrator.")
                     # Still update CM but without parts
-                    finalize_closure(True)
+                    finalize_closure(form_values, True)
             else:
                 # No parts used, close directly
-                finalize_closure(True)
+                finalize_closure(form_values, True)
     
         ttk.Button(button_frame, text="WARNING: Complete CM", 
                 command=validate_and_proceed).pack(side='left', padx=5)
