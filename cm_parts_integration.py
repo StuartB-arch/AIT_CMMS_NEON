@@ -80,9 +80,9 @@ class CMPartsIntegration:
         try:
             cursor = self.conn.cursor()
             cursor.execute('''
-                SELECT part_number, description, storage_location, current_quantity
+                SELECT part_number, name, location, quantity_in_stock
                 FROM mro_inventory
-                WHERE current_quantity > 0
+                WHERE quantity_in_stock > 0
                 ORDER BY part_number
             ''')
 
@@ -227,8 +227,8 @@ class CMPartsIntegration:
                 for part in consumed_parts:
                     # Create transaction record
                     cursor.execute('''
-                        INSERT INTO mro_transactions
-                        (part_number, transaction_type, quantity, performed_by, notes, transaction_date)
+                        INSERT INTO mro_stock_transactions
+                        (part_number, transaction_type, quantity, technician_name, notes, transaction_date)
                         VALUES (%s, %s, %s, %s, %s, %s)
                     ''', (
                         part['part_number'],
@@ -242,8 +242,8 @@ class CMPartsIntegration:
                     # Update inventory quantity
                     cursor.execute('''
                         UPDATE mro_inventory
-                        SET current_quantity = current_quantity - %s,
-                            last_transaction_date = %s
+                        SET quantity_in_stock = quantity_in_stock - %s,
+                            last_updated = %s
                         WHERE part_number = %s
                     ''', (part['quantity'], datetime.now(), part['part_number']))
 
