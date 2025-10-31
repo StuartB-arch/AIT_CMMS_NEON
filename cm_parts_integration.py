@@ -50,6 +50,17 @@ class CMPartsIntegration:
                  text="Select parts consumed from MRO stock during this corrective maintenance.",
                  wraplength=850).pack(padx=10, pady=5)
 
+        # Search frame
+        search_frame = ttk.Frame(dialog)
+        search_frame.pack(fill='x', padx=10, pady=5)
+
+        ttk.Label(search_frame, text="Search Parts:", font=('Arial', 10, 'bold')).pack(side='left', padx=5)
+        search_var = tk.StringVar()
+        search_entry = ttk.Entry(search_frame, textvariable=search_var, width=40)
+        search_entry.pack(side='left', padx=5)
+        ttk.Label(search_frame, text="(Search by part number or description)",
+                 font=('Arial', 9, 'italic'), foreground='gray').pack(side='left', padx=5)
+
         # Parts list
         list_frame = ttk.LabelFrame(dialog, text="Available MRO Stock Parts")
         list_frame.pack(fill='both', expand=True, padx=10, pady=5)
@@ -77,6 +88,7 @@ class CMPartsIntegration:
         parts_tree.pack(fill='both', expand=True, padx=5, pady=5)
 
         # Load available parts from MRO inventory
+        all_parts_data = []
         try:
             cursor = self.conn.cursor()
             cursor.execute('''
@@ -86,11 +98,34 @@ class CMPartsIntegration:
                 ORDER BY part_number
             ''')
 
-            for part in cursor.fetchall():
-                parts_tree.insert('', 'end', values=part)
+            all_parts_data = cursor.fetchall()
 
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load MRO inventory: {str(e)}")
+
+        # Function to filter and display parts based on search
+        def filter_parts(*args):
+            """Filter parts list based on search term"""
+            search_term = search_var.get().lower().strip()
+
+            # Clear current items
+            for item in parts_tree.get_children():
+                parts_tree.delete(item)
+
+            # Filter and display parts
+            for part in all_parts_data:
+                part_number = str(part[0]).lower()
+                description = str(part[1]).lower()
+
+                # Show part if search term is empty or matches part number or description
+                if not search_term or search_term in part_number or search_term in description:
+                    parts_tree.insert('', 'end', values=part)
+
+        # Initial load of all parts
+        filter_parts()
+
+        # Bind search to filter function
+        search_var.trace('w', filter_parts)
 
         # Consumption entry frame
         entry_frame = ttk.LabelFrame(dialog, text="Add Parts Consumed")
