@@ -1774,13 +1774,13 @@ class MROStockManager:
         params = []
 
         if system_filter != 'All':
-            query += ' AND engineering_system = %s'
+            query += ' AND LOWER(engineering_system) = LOWER(%s)'
             params.append(system_filter)
 
         if status_filter == 'Low Stock':
             query += ' AND quantity_in_stock < minimum_stock'
         elif status_filter != 'All':
-            query += ' AND status = %s'
+            query += ' AND LOWER(status) = LOWER(%s)'
             params.append(status_filter)
 
         if search_term:
