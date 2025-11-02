@@ -65,6 +65,15 @@ class CMPartsIntegration:
         list_frame = ttk.LabelFrame(dialog, text="Available MRO Stock Parts")
         list_frame.pack(fill='both', expand=True, padx=10, pady=5)
 
+        # Add legend
+        legend_frame = ttk.Frame(list_frame)
+        legend_frame.pack(fill='x', padx=5, pady=2)
+        ttk.Label(legend_frame, text="Legend:", font=('Arial', 9, 'bold')).pack(side='left', padx=5)
+        ttk.Label(legend_frame, text="● In Stock", foreground='black').pack(side='left', padx=5)
+        ttk.Label(legend_frame, text="● Low Stock", foreground='orange').pack(side='left', padx=5)
+        ttk.Label(legend_frame, text="● Out of Stock", foreground='gray',
+                 font=('Arial', 9, 'italic')).pack(side='left', padx=5)
+
         # Scrollable tree view
         tree_scroll = ttk.Scrollbar(list_frame)
         tree_scroll.pack(side='right', fill='y')
@@ -85,16 +94,21 @@ class CMPartsIntegration:
         parts_tree.column('Location', width=150)
         parts_tree.column('Qty Available', width=120)
 
+        # Configure tags for visual indicators
+        parts_tree.tag_configure('out_of_stock', foreground='gray', font=('Arial', 9, 'italic'))
+        parts_tree.tag_configure('low_stock', foreground='orange')
+        parts_tree.tag_configure('in_stock', foreground='black')
+
         parts_tree.pack(fill='both', expand=True, padx=5, pady=5)
 
-        # Load available parts from MRO inventory
+        # Load available parts from MRO inventory (show all parts, including out of stock)
         all_parts_data = []
         try:
             cursor = self.conn.cursor()
             cursor.execute('''
                 SELECT part_number, name, location, quantity_in_stock
                 FROM mro_inventory
-                WHERE quantity_in_stock > 0
+                WHERE status = 'Active'
                 ORDER BY part_number
             ''')
 
@@ -116,10 +130,19 @@ class CMPartsIntegration:
             for part in all_parts_data:
                 part_number = str(part[0]).lower()
                 description = str(part[1]).lower()
+                qty_available = float(part[3]) if part[3] else 0.0
 
                 # Show part if search term is empty or matches part number or description
                 if not search_term or search_term in part_number or search_term in description:
-                    parts_tree.insert('', 'end', values=part)
+                    # Determine tag based on stock level
+                    if qty_available <= 0:
+                        tag = 'out_of_stock'
+                    elif qty_available <= 5:  # Low stock threshold
+                        tag = 'low_stock'
+                    else:
+                        tag = 'in_stock'
+
+                    parts_tree.insert('', 'end', values=part, tags=(tag,))
 
         # Initial load of all parts
         filter_parts()
@@ -197,9 +220,18 @@ class CMPartsIntegration:
             desc = values[1]
             qty_available = float(values[3])  # Convert to float for comparison
 
+            if qty_available <= 0:
+                messagebox.showerror("Part Out of Stock",
+                                    f"Part {part_num} is currently out of stock.\n\n"
+                                    f"Available quantity: {qty_available}\n"
+                                    f"Please replenish stock before recording consumption.")
+                return
+
             if qty_used > qty_available:
-                messagebox.showerror("Error",
-                                    f"Quantity used ({qty_used}) exceeds available quantity ({qty_available})")
+                messagebox.showerror("Insufficient Stock",
+                                    f"Quantity used ({qty_used}) exceeds available quantity ({qty_available})\n\n"
+                                    f"Part: {part_num}\n"
+                                    f"Please adjust the quantity or replenish stock.")
                 return
 
             # Check if part already added
@@ -260,6 +292,14 @@ class CMPartsIntegration:
 
                 # Record each consumed part
                 for part in consumed_parts:
+                    # Get unit price for cost calculation
+                    cursor.execute('''
+                        SELECT unit_price FROM mro_inventory WHERE part_number = %s
+                    ''', (part['part_number'],))
+                    result = cursor.fetchone()
+                    unit_price = float(result[0]) if result and result[0] else 0.0
+                    total_cost = unit_price * part['quantity']
+
                     # Create transaction record
                     cursor.execute('''
                         INSERT INTO mro_stock_transactions
@@ -272,6 +312,21 @@ class CMPartsIntegration:
                         technician_name,
                         f"CM Work Order: {cm_number}",
                         datetime.now()
+                    ))
+
+                    # Record in cm_parts_used table for tracking and reporting
+                    cursor.execute('''
+                        INSERT INTO cm_parts_used
+                        (cm_number, part_number, quantity_used, total_cost, recorded_date, recorded_by, notes)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    ''', (
+                        cm_number,
+                        part['part_number'],
+                        part['quantity'],
+                        total_cost,
+                        datetime.now(),
+                        technician_name,
+                        f"Parts consumed during CM {cm_number}"
                     ))
 
                     # Update inventory quantity
