@@ -11587,7 +11587,7 @@ class AITCMMSSystem:
                 messagebox.showerror("Error", f"Failed to update CM: {str(e)}")
 
         def delete_cm():
-            result = messagebox.askyesno("Confirm Delete", 
+            result = messagebox.askyesno("Confirm Delete",
                                     f"Delete CM {orig_cm_number}?\n\n"
                                     f"This action cannot be undone.")
             if result:
@@ -11595,6 +11595,10 @@ class AITCMMSSystem:
                     cursor = self.conn.cursor()
                     # First delete any child part requests (defensive; FK now also cascades)
                     cursor.execute('DELETE FROM cm_parts_requests WHERE cm_number = %s', (orig_cm_number,))
+                    # Delete any parts consumption records for this CM
+                    cursor.execute('DELETE FROM cm_parts_used WHERE cm_number = %s', (orig_cm_number,))
+                    # Delete any MRO stock transactions related to this CM (optional but clean)
+                    cursor.execute('DELETE FROM mro_stock_transactions WHERE notes LIKE %s', (f'%{orig_cm_number}%',))
                     # Then delete the CM itself
                     cursor.execute('DELETE FROM corrective_maintenance WHERE cm_number = %s', (orig_cm_number,))
                     self.conn.commit()
