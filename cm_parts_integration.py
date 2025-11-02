@@ -36,8 +36,27 @@ class CMPartsIntegration:
         dialog.transient(self.parent.root)
         dialog.grab_set()
 
+        # Create main canvas with scrollbar for entire dialog
+        main_canvas = tk.Canvas(dialog, highlightthickness=0)
+        main_scrollbar = ttk.Scrollbar(dialog, orient="vertical", command=main_canvas.yview)
+        scrollable_frame = ttk.Frame(main_canvas)
+
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: main_canvas.configure(scrollregion=main_canvas.bbox("all"))
+        )
+
+        main_canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        main_canvas.configure(yscrollcommand=main_scrollbar.set)
+
+        # Enable mousewheel scrolling
+        def on_mousewheel(event):
+            main_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+
+        main_canvas.bind_all("<MouseWheel>", on_mousewheel)
+
         # Header - more compact
-        header_frame = ttk.Frame(dialog)
+        header_frame = ttk.Frame(scrollable_frame)
         header_frame.pack(fill='x', padx=10, pady=(10, 5))
 
         ttk.Label(header_frame, text=f"MRO Parts Consumption - CM {cm_number} - Technician: {technician_name}",
@@ -47,7 +66,7 @@ class CMPartsIntegration:
                  font=('Arial', 9), foreground='gray').pack(pady=2)
 
         # Search frame - more compact
-        search_frame = ttk.Frame(dialog)
+        search_frame = ttk.Frame(scrollable_frame)
         search_frame.pack(fill='x', padx=10, pady=(0, 5))
 
         ttk.Label(search_frame, text="Search:", font=('Arial', 10, 'bold')).pack(side='left', padx=5)
@@ -58,7 +77,7 @@ class CMPartsIntegration:
                  font=('Arial', 9, 'italic'), foreground='gray').pack(side='left')
 
         # Parts list
-        list_frame = ttk.LabelFrame(dialog, text="Available MRO Stock Parts")
+        list_frame = ttk.LabelFrame(scrollable_frame, text="Available MRO Stock Parts")
         list_frame.pack(fill='both', expand=True, padx=10, pady=5)
 
         # Add legend
@@ -147,7 +166,7 @@ class CMPartsIntegration:
         search_var.trace('w', filter_parts)
 
         # Consumption entry frame
-        entry_frame = ttk.LabelFrame(dialog, text="Add Parts Consumed")
+        entry_frame = ttk.LabelFrame(scrollable_frame, text="Add Parts Consumed")
         entry_frame.pack(fill='x', padx=10, pady=5)
 
         ttk.Label(entry_frame, text="Selected Part:").grid(row=0, column=0, padx=5, pady=5, sticky='w')
@@ -164,7 +183,7 @@ class CMPartsIntegration:
         consumed_parts = []
 
         # Consumed parts list - reduced height for better space usage
-        consumed_frame = ttk.LabelFrame(dialog, text="Parts to be Consumed")
+        consumed_frame = ttk.LabelFrame(scrollable_frame, text="Parts to be Consumed")
         consumed_frame.pack(fill='x', padx=10, pady=5)
 
         # Add scrollbar for consumed parts
@@ -284,6 +303,7 @@ class CMPartsIntegration:
                                               "No parts were added to the consumed list. Continue without recording parts?")
                 if not response:
                     return
+                main_canvas.unbind_all("<MouseWheel>")
                 dialog.destroy()
                 if callback:
                     callback(True)
@@ -343,6 +363,7 @@ class CMPartsIntegration:
 
                 messagebox.showinfo("Success",
                                    f"Successfully recorded {len(consumed_parts)} part(s) consumed for CM {cm_number}")
+                main_canvas.unbind_all("<MouseWheel>")
                 dialog.destroy()
 
                 if callback:
@@ -362,17 +383,146 @@ class CMPartsIntegration:
                 if not response:
                     return
 
+            main_canvas.unbind_all("<MouseWheel>")
             dialog.destroy()
             if callback:
                 callback(False)
 
         # Bottom buttons
-        bottom_frame = ttk.Frame(dialog)
+        bottom_frame = ttk.Frame(scrollable_frame)
         bottom_frame.pack(fill='x', padx=10, pady=10)
 
         ttk.Button(bottom_frame, text="Save and Complete",
                   command=save_and_close).pack(side='left', padx=5)
         ttk.Button(bottom_frame, text="Cancel",
                   command=cancel_dialog).pack(side='left', padx=5)
+
+        # Pack the canvas and scrollbar
+        main_canvas.pack(side="left", fill="both", expand=True)
+        main_scrollbar.pack(side="right", fill="y")
+
+        # Cleanup mousewheel binding when dialog closes
+        def on_closing():
+            main_canvas.unbind_all("<MouseWheel>")
+            dialog.destroy()
+            if callback:
+                callback(False)
+
+        dialog.protocol("WM_DELETE_WINDOW", on_closing)
+
+        return dialog
+
+    def show_cm_parts_details(self, cm_number):
+        """
+        Show read-only view of parts consumed for a specific CM
+
+        Args:
+            cm_number: The CM work order number to view parts for
+        """
+        dialog = tk.Toplevel(self.parent.root)
+        dialog.title(f"Parts Used - CM {cm_number}")
+        dialog.geometry("800x500")
+        dialog.transient(self.parent.root)
+
+        # Header
+        header_frame = ttk.Frame(dialog)
+        header_frame.pack(fill='x', padx=10, pady=10)
+
+        ttk.Label(header_frame, text=f"Parts Consumed - CM {cm_number}",
+                 font=('Arial', 12, 'bold')).pack()
+
+        # Get parts data from database
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute('''
+                SELECT
+                    cp.part_number,
+                    mi.name,
+                    cp.quantity_used,
+                    cp.total_cost,
+                    cp.recorded_date,
+                    cp.recorded_by,
+                    cp.notes
+                FROM cm_parts_used cp
+                LEFT JOIN mro_inventory mi ON cp.part_number = mi.part_number
+                WHERE cp.cm_number = %s
+                ORDER BY cp.recorded_date DESC
+            ''', (cm_number,))
+
+            parts_data = cursor.fetchall()
+
+            if not parts_data:
+                ttk.Label(header_frame, text="No parts recorded for this CM",
+                         font=('Arial', 10), foreground='gray').pack(pady=5)
+            else:
+                ttk.Label(header_frame, text=f"Total: {len(parts_data)} part(s)",
+                         font=('Arial', 10), foreground='blue').pack(pady=2)
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load parts data: {str(e)}")
+            dialog.destroy()
+            return
+
+        # Parts list frame
+        list_frame = ttk.LabelFrame(dialog, text="Parts Details")
+        list_frame.pack(fill='both', expand=True, padx=10, pady=5)
+
+        # Create scrollable treeview
+        tree_scroll = ttk.Scrollbar(list_frame)
+        tree_scroll.pack(side='right', fill='y')
+
+        columns = ('Part Number', 'Description', 'Qty Used', 'Cost', 'Date', 'Recorded By')
+        parts_tree = ttk.Treeview(list_frame,
+                                  columns=columns,
+                                  show='headings',
+                                  yscrollcommand=tree_scroll.set)
+        tree_scroll.config(command=parts_tree.yview)
+
+        # Configure columns
+        parts_tree.heading('Part Number', text='Part Number')
+        parts_tree.heading('Description', text='Description')
+        parts_tree.heading('Qty Used', text='Qty Used')
+        parts_tree.heading('Cost', text='Total Cost')
+        parts_tree.heading('Date', text='Date Recorded')
+        parts_tree.heading('Recorded By', text='Recorded By')
+
+        parts_tree.column('Part Number', width=120)
+        parts_tree.column('Description', width=250)
+        parts_tree.column('Qty Used', width=80)
+        parts_tree.column('Cost', width=100)
+        parts_tree.column('Date', width=150)
+        parts_tree.column('Recorded By', width=100)
+
+        # Populate with data
+        total_cost = 0.0
+        for part in parts_data:
+            part_number = part[0]
+            description = part[1] if part[1] else "N/A"
+            qty_used = f"{part[2]:.2f}" if part[2] else "0"
+            cost = part[3] if part[3] else 0.0
+            total_cost += cost
+            date_recorded = str(part[4])[:19] if part[4] else "N/A"
+            recorded_by = part[5] if part[5] else "N/A"
+
+            parts_tree.insert('', 'end', values=(
+                part_number,
+                description,
+                qty_used,
+                f"${cost:.2f}",
+                date_recorded,
+                recorded_by
+            ))
+
+        parts_tree.pack(fill='both', expand=True, padx=5, pady=5)
+
+        # Summary frame
+        summary_frame = ttk.Frame(dialog)
+        summary_frame.pack(fill='x', padx=10, pady=5)
+
+        ttk.Label(summary_frame, text=f"Total Cost: ${total_cost:.2f}",
+                 font=('Arial', 11, 'bold')).pack(side='right', padx=10)
+
+        # Close button
+        ttk.Button(dialog, text="Close", command=dialog.destroy).pack(pady=10)
 
         return dialog
