@@ -1923,7 +1923,7 @@ class AITCMMSSystem:
         note_frame.pack(fill='x', padx=20)
     
         ttk.Label(note_frame, 
-                  text="WARNING: Note: Last person to close the program pushes the final database state",
+                  text="Note: Last person to close the program pushes the final database state",
                   foreground='blue', font=('Arial', 9),
                   wraplength=550).pack()
     
@@ -1953,14 +1953,14 @@ class AITCMMSSystem:
                 result["action"] = "close_without_sync"
                 dialog.destroy()
     
-        ttk.Button(button_frame, text="CHECK: Backup and Close", 
+        ttk.Button(button_frame, text="Backup and Close", 
                 command=sync_and_close,
                 style='Accent.TButton').pack(side='left', padx=5)
     
         ttk.Button(button_frame, text="Cancel", 
                 command=cancel_close).pack(side='left', padx=5)
     
-        ttk.Button(button_frame, text="CHECK: Close Without Backup", 
+        ttk.Button(button_frame, text="Close Without Backup", 
                 command=close_without_sync).pack(side='right', padx=5)
     
         # Wait for dialog
@@ -2171,10 +2171,10 @@ class AITCMMSSystem:
                     description, location = result
                     desc_var.set(description or "")
                     location_var.set(location or "")
-                    status_label.config(text="CHECK: Equipment found - fields auto-filled", foreground="green")
+                    status_label.config(text="Equipment found - fields auto-filled", foreground="green")
                 else:
                     # Don't clear existing values, just update status
-                    status_label.config(text="CHECK: Equipment not found in database", foreground="orange")
+                    status_label.config(text="Equipment not found in database", foreground="orange")
                 
             except Exception as e:
                 status_label.config(text=f"Error: {str(e)}", foreground="red")
@@ -2447,9 +2447,9 @@ class AITCMMSSystem:
         button_frame = ttk.Frame(dialog)
         button_frame.pack(fill='x', padx=10, pady=15)
     
-        ttk.Button(button_frame, text="WARNING: Save CM", command=validate_and_save_cm, 
+        ttk.Button(button_frame, text="Save CM", command=validate_and_save_cm, 
                 width=15).pack(side='left', padx=5)
-        ttk.Button(button_frame, text="CHECK: Cancel", command=dialog.destroy, 
+        ttk.Button(button_frame, text="Cancel", command=dialog.destroy, 
                 width=15).pack(side='left', padx=5)
     
         # Help text
@@ -2790,7 +2790,7 @@ class AITCMMSSystem:
             ttk.Button(selection_frame, text="Export Text", 
                     command=export_report).pack(side='left', padx=5)
         
-            ttk.Button(selection_frame, text="WARNING: Export Professional PDF", 
+            ttk.Button(selection_frame, text="Export Professional PDF", 
                     command=export_professional_pdf).pack(side='left', padx=5)
         
             ttk.Button(selection_frame, text="Close", 
@@ -5337,9 +5337,9 @@ class AITCMMSSystem:
                 # No parts used, close directly
                 finalize_closure(True)
     
-        ttk.Button(button_frame, text="WARNING: Proceed to Close CM", 
+        ttk.Button(button_frame, text="Proceed to Close CM", 
                 command=validate_and_proceed).pack(side='left', padx=5)
-        ttk.Button(button_frame, text="CHECK: Cancel", 
+        ttk.Button(button_frame, text="Cancel", 
                 command=dialog.destroy).pack(side='left', padx=5)
     
     
@@ -7687,7 +7687,7 @@ class AITCMMSSystem:
         # Find the controls frame in equipment tab
         for widget in self.equipment_frame.winfo_children():
             if isinstance(widget, ttk.LabelFrame) and "Equipment Controls" in widget['text']:
-                ttk.Button(widget, text="WARNING: Standardize All Dates (YYYY-MM-DD)", 
+                ttk.Button(widget, text="Standardize All Dates (YYYY-MM-DD)", 
                           command=self.standardize_all_database_dates,
                           width=30).pack(side='left', padx=5)
                 break
@@ -7735,7 +7735,7 @@ class AITCMMSSystem:
                   command=self.refresh_equipment_list).pack(side='left', padx=5)
         ttk.Button(controls_frame, text="Export Equipment", 
                   command=self.export_equipment_list).pack(side='left', padx=5)
-        ttk.Button(controls_frame, text="WARNING: Bulk Edit PM Cycles", 
+        ttk.Button(controls_frame, text="Bulk Edit PM Cycles", 
                   command=self.bulk_edit_pm_cycles).pack(side='left', padx=5)
         
         
@@ -8054,10 +8054,10 @@ class AITCMMSSystem:
         ttk.Button(buttons_frame, text="Refresh List", 
                 command=self.load_recent_completions).pack(side='left', padx=5)
                
-        ttk.Button(buttons_frame, text="WARNING: Check Equipment Schedule", 
+        ttk.Button(buttons_frame, text="Check Equipment Schedule", 
                 command=self.create_pm_schedule_lookup_dialog).pack(side='left', padx=5)
         
-        ttk.Button(buttons_frame, text="WARNING: Create CM from PM", 
+        ttk.Button(buttons_frame, text="Create CM from PM", 
                 command=self.create_cm_from_pm_dialog).pack(side='left', padx=5)
         
         # Recent completions
@@ -8763,7 +8763,7 @@ class AITCMMSSystem:
         controls_frame.pack(fill='x', padx=10, pady=5)
 
         # Add Asset button
-        ttk.Button(controls_frame, text="CHECK: Add Asset", 
+        ttk.Button(controls_frame, text="Add Asset", 
                 command=self.add_cannot_find_asset_dialog,
                 style='Accent.TButton').pack(side='left', padx=5)
     
@@ -8782,7 +8782,7 @@ class AITCMMSSystem:
         search_frame = ttk.Frame(controls_frame)
         search_frame.pack(side='right', padx=5)
         
-        ttk.Label(search_frame, text="WARNING: Search:").pack(side='left', padx=(10, 5))
+        ttk.Label(search_frame, text="Search:").pack(side='left', padx=(10, 5))
         self.cannot_find_search_var = tk.StringVar()
         self.cannot_find_search_var.trace('w', lambda *args: self.filter_cannot_find_assets())
         
@@ -8790,7 +8790,7 @@ class AITCMMSSystem:
         search_entry.pack(side='left', padx=5)
         
         # Clear search button
-        ttk.Button(search_frame, text="CHECK:", width=3,
+        ttk.Button(search_frame, text="X", width=3,
                 command=lambda: self.cannot_find_search_var.set('')).pack(side='left', padx=2)
 
         # Cannot Find list
@@ -10707,7 +10707,7 @@ class AITCMMSSystem:
         monthly_cb = ttk.Checkbutton(monthly_frame, text="Monthly PM (every 30 days)", 
                                     variable=monthly_var)
         monthly_cb.pack(side='left')
-        ttk.Label(monthly_frame, text="CHECK: Recommended for most equipment", 
+        ttk.Label(monthly_frame, text="Recommended for most equipment", 
                 foreground='green', font=('Arial', 8, 'italic')).pack(side='left', padx=10)
     
         # Six Month PM
@@ -10716,7 +10716,7 @@ class AITCMMSSystem:
         six_month_cb = ttk.Checkbutton(six_month_frame, text="Six Month PM (every 180 days)", 
                                         variable=six_month_var)
         six_month_cb.pack(side='left')
-        ttk.Label(six_month_frame, text="CHECK: Less frequent PM cycle", 
+        ttk.Label(six_month_frame, text="Less frequent PM cycle", 
                 foreground='orange', font=('Arial', 8, 'italic')).pack(side='left', padx=10)
     
         # Annual PM
@@ -10725,14 +10725,14 @@ class AITCMMSSystem:
         annual_cb = ttk.Checkbutton(annual_frame, text="Annual PM (yearly)", 
                                     variable=annual_var)
         annual_cb.pack(side='left')
-        ttk.Label(annual_frame, text="CHECK: Recommended for comprehensive checks", 
+        ttk.Label(annual_frame, text="Recommended for comprehensive checks", 
                 foreground='green', font=('Arial', 8, 'italic')).pack(side='left', padx=10)
     
         # Warning label
         warning_frame = ttk.Frame(pm_frame)
         warning_frame.pack(fill='x', pady=15)
         warning_label = ttk.Label(warning_frame, 
-                                text="CHECK: Note: You must select at least one PM frequency to reactivate.",
+                                text="Note: You must select at least one PM frequency to reactivate.",
                                 foreground='blue', font=('Arial', 9, 'italic'), wraplength=600)
         warning_label.pack()
     
@@ -11248,7 +11248,7 @@ class AITCMMSSystem:
             ttk.Button(button_frame, text="Cancel", command=cal_dialog.destroy).pack(side='left', padx=5)
     
         # Calendar button with icon
-        ttk.Button(date_frame, text="WARNING: Pick Date", command=open_calendar).pack(side='left')
+        ttk.Button(date_frame, text="Pick Date", command=open_calendar).pack(side='left')
         
         # Date format helper label
         ttk.Label(dialog, text="Format: YYYY-MM-DD", 
@@ -11906,9 +11906,9 @@ class AITCMMSSystem:
                 # No parts used, close directly
                 finalize_closure(form_values, True)
     
-        ttk.Button(button_frame, text="WARNING: Complete CM", 
+        ttk.Button(button_frame, text="Complete CM", 
                 command=validate_and_proceed).pack(side='left', padx=5)
-        ttk.Button(button_frame, text="CHECK: Cancel", 
+        ttk.Button(button_frame, text="Cancel", 
                 command=dialog.destroy).pack(side='left', padx=5)
     
  
@@ -13944,12 +13944,12 @@ class AITCMMSSystem:
             button_frame.pack(side='bottom', fill='x', padx=20, pady=20)
         
             # Import button (green)
-            import_button = ttk.Button(button_frame, text="CHECK: Import with These Mappings", 
+            import_button = ttk.Button(button_frame, text="Import with These Mappings", 
                                     command=process_import)
             import_button.pack(side='left', padx=10)
         
             # Cancel button
-            cancel_button = ttk.Button(button_frame, text="CHECK: Cancel", 
+            cancel_button = ttk.Button(button_frame, text="Cancel", 
                                     command=cancel_import)
             cancel_button.pack(side='right', padx=10)
         
@@ -14127,7 +14127,7 @@ class AITCMMSSystem:
 
         # Run to Failure option
         run_to_failure_var = tk.BooleanVar(value=(current_status == 'Run to Failure'))
-        rtf_cb = ttk.Checkbutton(pm_frame, text="WARNING: Set as Run to Failure Equipment", 
+        rtf_cb = ttk.Checkbutton(pm_frame, text="Set as Run to Failure Equipment", 
                                 variable=run_to_failure_var,
                                 command=lambda: toggle_status_options())
         rtf_cb.pack(anchor='w', pady=5)
@@ -14140,7 +14140,7 @@ class AITCMMSSystem:
 
         # Cannot Find option - NEW!
         cannot_find_var = tk.BooleanVar(value=(current_status == 'Cannot Find'))
-        cf_cb = ttk.Checkbutton(pm_frame, text="CHECK: Mark as Cannot Find", 
+        cf_cb = ttk.Checkbutton(pm_frame, text="Mark as Cannot Find", 
                             variable=cannot_find_var,
                             command=lambda: toggle_status_options())
         cf_cb.pack(anchor='w', pady=5)
@@ -14219,7 +14219,7 @@ class AITCMMSSystem:
 
         # Run to Failure note
         note_label = ttk.Label(pm_frame, 
-                              text="WARNING: Run to Failure and Cannot Find equipment will not be scheduled for PMs",
+                              text="Run to Failure and Cannot Find equipment will not be scheduled for PMs",
                               font=('Arial', 8), foreground='orange')
         note_label.pack(anchor='w', pady=(5, 0))
 
@@ -14362,10 +14362,10 @@ class AITCMMSSystem:
         button_frame = ttk.Frame(dialog)
         button_frame.grid(row=len(fields)+1, column=0, columnspan=2, pady=15)
 
-        update_btn = ttk.Button(button_frame, text="CHECK: Update Equipment", command=update_equipment)
+        update_btn = ttk.Button(button_frame, text="Update Equipment", command=update_equipment)
         update_btn.pack(side='left', padx=10)
 
-        cancel_btn = ttk.Button(button_frame, text="CHECK: Cancel", command=dialog.destroy)
+        cancel_btn = ttk.Button(button_frame, text="Cancel", command=dialog.destroy)
         cancel_btn.pack(side='left', padx=5)
     
     
@@ -14538,7 +14538,7 @@ class AITCMMSSystem:
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to update PM cycles:\n\n{str(e)}", parent=dialog)
     
-        ttk.Button(button_frame, text="CHECK: Apply to All Selected", 
+        ttk.Button(button_frame, text="Apply to All Selected", 
                 command=apply_changes,
                 style='Accent.TButton').pack(side='left', padx=5)
     
@@ -15397,7 +15397,7 @@ class AITCMMSSystem:
         header_frame = ttk.Frame(scrollable_frame, padding=20)
         header_frame.pack(fill='x')
 
-        ttk.Label(header_frame, text="WARNING: Database Conflict Detected!", 
+        ttk.Label(header_frame, text="Database Conflict Detected!", 
                 font=('Arial', 16, 'bold'), foreground='red').pack()
         ttk.Label(header_frame, text="Team members updated the database while you were working", 
                 font=('Arial', 11), foreground='orange').pack(pady=5)
@@ -15503,14 +15503,14 @@ class AITCMMSSystem:
             result["action"] = "cancel"
             dialog.destroy()
 
-        ttk.Button(button_frame, text="CHECK: Smart Merge (Recommended)", 
+        ttk.Button(button_frame, text="Smart Merge (Recommended)", 
                 command=do_merge,
                 style='Accent.TButton').pack(side='left', padx=5)
 
         ttk.Button(button_frame, text="Cancel", 
                 command=do_cancel).pack(side='left', padx=5)
 
-        ttk.Button(button_frame, text="WARNING: Override Their Work", 
+        ttk.Button(button_frame, text="Override Their Work", 
                 command=do_override).pack(side='right', padx=5)
 
         # Pack the canvas and scrollbar
@@ -15609,7 +15609,7 @@ class AITCMMSSystem:
         note_frame.pack(fill='x', padx=20)
 
         ttk.Label(note_frame, 
-                  text="WARNING: Note: Last person to close the program pushes the final database state",
+                  text="Note: Last person to close the program pushes the final database state",
                   foreground='blue', font=('Arial', 9),
                   wraplength=550).pack()
 
@@ -15639,14 +15639,14 @@ class AITCMMSSystem:
                 result["action"] = "close_without_sync"
                 dialog.destroy()
 
-        ttk.Button(button_frame, text="WARNING: Backup and Close", 
+        ttk.Button(button_frame, text="Backup and Close", 
                 command=sync_and_close,
                 style='Accent.TButton').pack(side='left', padx=5)
 
         ttk.Button(button_frame, text="Cancel", 
                 command=cancel_close).pack(side='left', padx=5)
 
-        ttk.Button(button_frame, text="WARNING: Close Without Backup", 
+        ttk.Button(button_frame, text="Close Without Backup", 
                 command=close_without_sync).pack(side='right', padx=5)
 
         # Pack the canvas and scrollbar
