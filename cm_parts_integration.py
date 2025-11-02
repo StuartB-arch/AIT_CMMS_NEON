@@ -27,39 +27,35 @@ class CMPartsIntegration:
         """
         dialog = tk.Toplevel(self.parent.root)
         dialog.title(f"Parts Consumption - CM {cm_number}")
-        dialog.geometry("900x650")
+
+        # Make dialog responsive with better default size
+        dialog.geometry("950x750")
+        dialog.minsize(850, 700)  # Set minimum size to ensure all content is visible
+        dialog.resizable(True, True)  # Allow resizing in both directions
+
         dialog.transient(self.parent.root)
         dialog.grab_set()
 
-        # Header
+        # Header - more compact
         header_frame = ttk.Frame(dialog)
-        header_frame.pack(fill='x', padx=10, pady=10)
+        header_frame.pack(fill='x', padx=10, pady=(10, 5))
 
-        ttk.Label(header_frame, text="MRO Parts Consumption",
-                 font=('Arial', 12, 'bold')).pack()
-        ttk.Label(header_frame, text=f"CM Number: {cm_number}",
-                 font=('Arial', 10)).pack()
-        ttk.Label(header_frame, text=f"Technician: {technician_name}",
-                 font=('Arial', 10)).pack()
-
-        # Instructions
-        info_frame = ttk.LabelFrame(dialog, text="Instructions")
-        info_frame.pack(fill='x', padx=10, pady=5)
-
-        ttk.Label(info_frame,
+        ttk.Label(header_frame, text=f"MRO Parts Consumption - CM {cm_number} - Technician: {technician_name}",
+                 font=('Arial', 11, 'bold')).pack()
+        ttk.Label(header_frame,
                  text="Select parts consumed from MRO stock during this corrective maintenance.",
-                 wraplength=850).pack(padx=10, pady=5)
+                 font=('Arial', 9), foreground='gray').pack(pady=2)
 
-        # Search frame
+        # Search frame - more compact
         search_frame = ttk.Frame(dialog)
-        search_frame.pack(fill='x', padx=10, pady=5)
+        search_frame.pack(fill='x', padx=10, pady=(0, 5))
 
-        ttk.Label(search_frame, text="Search Parts:", font=('Arial', 10, 'bold')).pack(side='left', padx=5)
+        ttk.Label(search_frame, text="Search:", font=('Arial', 10, 'bold')).pack(side='left', padx=5)
         search_var = tk.StringVar()
-        search_entry = ttk.Entry(search_frame, textvariable=search_var, width=40)
+        search_entry = ttk.Entry(search_frame, textvariable=search_var, width=50)
         search_entry.pack(side='left', padx=5)
-        ttk.Label(search_frame, text="(Search by part number or description)",
-                 font=('Arial', 9, 'italic'), foreground='gray').pack(side='left', padx=5)
+        ttk.Label(search_frame, text="(by part number or description)",
+                 font=('Arial', 9, 'italic'), foreground='gray').pack(side='left')
 
         # Parts list
         list_frame = ttk.LabelFrame(dialog, text="Available MRO Stock Parts")
@@ -167,14 +163,20 @@ class CMPartsIntegration:
         # Track consumed parts
         consumed_parts = []
 
-        # Consumed parts list
+        # Consumed parts list - reduced height for better space usage
         consumed_frame = ttk.LabelFrame(dialog, text="Parts to be Consumed")
         consumed_frame.pack(fill='x', padx=10, pady=5)
+
+        # Add scrollbar for consumed parts
+        consumed_scroll = ttk.Scrollbar(consumed_frame)
+        consumed_scroll.pack(side='right', fill='y')
 
         consumed_tree = ttk.Treeview(consumed_frame,
                                      columns=('Part Number', 'Description', 'Qty Used'),
                                      show='headings',
-                                     height=4)
+                                     height=3,
+                                     yscrollcommand=consumed_scroll.set)
+        consumed_scroll.config(command=consumed_tree.yview)
 
         consumed_tree.heading('Part Number', text='Part Number')
         consumed_tree.heading('Description', text='Description')
