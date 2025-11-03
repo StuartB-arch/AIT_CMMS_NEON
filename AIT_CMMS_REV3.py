@@ -7270,7 +7270,41 @@ class AITCMMSSystem:
                                 font=('Arial', 10), foreground='red')
             error_label.pack(pady=20) 
     
-    
+
+    def _ensure_connection(self):
+        """
+        Validate and refresh self.conn if needed to handle NEON auto-suspend
+        This method checks if the connection is still alive and gets a fresh one if not.
+        """
+        try:
+            if hasattr(self, 'conn') and self.conn and not self.conn.closed:
+                # Test if connection is still valid
+                cursor = self.conn.cursor()
+                cursor.execute("SELECT 1")
+                cursor.fetchone()
+                cursor.close()
+                self.conn.commit()
+                return  # Connection is good
+        except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
+            print(f"Connection validation failed: {e}. Refreshing connection...")
+        except Exception as e:
+            print(f"Unexpected error validating connection: {e}")
+
+        # Connection is bad or doesn't exist, get a fresh one
+        try:
+            if hasattr(self, 'conn') and self.conn:
+                try:
+                    self.conn.close()
+                except:
+                    pass
+
+            self.conn = db_pool.get_connection()
+            self.conn.autocommit = False
+            print("Connection refreshed successfully")
+        except Exception as e:
+            print(f"ERROR: Failed to refresh connection: {e}")
+            raise
+
     def init_database(self):
         """Initialize comprehensive CMMS database with Neon PostgreSQL and connection pooling"""
         try:
@@ -14296,32 +14330,27 @@ class AITCMMSSystem:
         
         def save_equipment():
             try:
-                # Rollback any failed transaction before starting
-                self.conn.rollback()
-
-                cursor = self.conn.cursor()
-                cursor.execute('''
-                    INSERT INTO equipment
-                    (sap_material_no, bfm_equipment_no, description, tool_id_drawing_no,
-                     location, master_lin, monthly_pm, six_month_pm, annual_pm)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ''', (
-                    entries["SAP Material No:"].get(),
-                    entries["BFM Equipment No:"].get(),
-                    entries["Description:"].get(),
-                    entries["Tool ID/Drawing No:"].get(),
-                    entries["Location:"].get(),
-                    entries["Master LIN:"].get(),
-                    monthly_var.get(),
-                    six_month_var.get(),
-                    annual_var.get()
-                ))
-                self.conn.commit()
+                with db_pool.get_cursor(commit=True) as cursor:
+                    cursor.execute('''
+                        INSERT INTO equipment
+                        (sap_material_no, bfm_equipment_no, description, tool_id_drawing_no,
+                         location, master_lin, monthly_pm, six_month_pm, annual_pm)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ''', (
+                        entries["SAP Material No:"].get(),
+                        entries["BFM Equipment No:"].get(),
+                        entries["Description:"].get(),
+                        entries["Tool ID/Drawing No:"].get(),
+                        entries["Location:"].get(),
+                        entries["Master LIN:"].get(),
+                        monthly_var.get(),
+                        six_month_var.get(),
+                        annual_var.get()
+                    ))
                 messagebox.showinfo("Success", "Equipment added successfully!")
                 dialog.destroy()
                 self.refresh_equipment_list()
             except Exception as e:
-                self.conn.rollback()
                 messagebox.showerror("Error", f"Failed to add equipment: {str(e)}")
         
         # Buttons
@@ -14344,18 +14373,14 @@ class AITCMMSSystem:
 
         # Fetch full equipment data
         try:
-            # Rollback any failed transaction before starting
-            self.conn.rollback()
+            with db_pool.get_cursor(commit=False) as cursor:
+                cursor.execute('SELECT * FROM equipment WHERE bfm_equipment_no = %s', (bfm_no,))
+                equipment_data = cursor.fetchone()
 
-            cursor = self.conn.cursor()
-            cursor.execute('SELECT * FROM equipment WHERE bfm_equipment_no = %s', (bfm_no,))
-            equipment_data = cursor.fetchone()
-
-            if not equipment_data:
-                messagebox.showerror("Error", "Equipment not found in database")
-                return
+                if not equipment_data:
+                    messagebox.showerror("Error", "Equipment not found in database")
+                    return
         except Exception as e:
-            self.conn.rollback()
             messagebox.showerror("Error", f"Database error: {str(e)}")
             return
 
@@ -14452,10 +14477,14 @@ class AITCMMSSystem:
     
         # Pre-populate technician if asset is already Cannot Find
         if current_status == 'Cannot Find':
-            cursor.execute('SELECT technician_name FROM cannot_find_assets WHERE bfm_equipment_no = %s', (bfm_no,))
-            cf_data = cursor.fetchone()
-            if cf_data:
-                tech_var.set(cf_data[0])
+            try:
+                with db_pool.get_cursor(commit=False) as cursor:
+                    cursor.execute('SELECT technician_name FROM cannot_find_assets WHERE bfm_equipment_no = %s', (bfm_no,))
+                    cf_data = cursor.fetchone()
+                    if cf_data:
+                        tech_var.set(cf_data[0])
+            except Exception as e:
+                print(f"Warning: Could not fetch technician data: {e}")
     
         tech_combo = ttk.Combobox(tech_frame, textvariable=tech_var, width=20)
         tech_combo['values'] = self.technicians if hasattr(self, 'technicians') else []
@@ -14515,11 +14544,6 @@ class AITCMMSSystem:
         def update_equipment():
             """Update equipment in database with Cannot Find support"""
             try:
-                # Rollback any failed transaction before starting
-                self.conn.rollback()
-
-                cursor = self.conn.cursor()
-
                 # Determine new status
                 if run_to_failure_var.get():
                     new_status = 'Run to Failure'
@@ -14527,86 +14551,86 @@ class AITCMMSSystem:
                     new_status = 'Cannot Find'
                 else:
                     new_status = 'Active'
-            
-                # Update equipment table
-                cursor.execute('''
-                    UPDATE equipment 
-                    SET sap_material_no = %s,
-                        description = %s,
-                        tool_id_drawing_no = %s,
-                        location = %s,
-                        master_lin = %s,
-                        monthly_pm = %s,
-                        six_month_pm = %s,
-                        annual_pm = %s,
-                        status = %s
-                    WHERE bfm_equipment_no = %s
-                ''', (
-                    entries["SAP Material No:"].get(),
-                    entries["Description:"].get(),
-                    entries["Tool ID/Drawing No:"].get(),
-                    entries["Location:"].get(),
-                    entries["Master LIN:"].get(),
-                    monthly_var.get(),
-                    six_month_var.get(),
-                    annual_var.get(),
-                    new_status,
-                    bfm_no
-                ))
-            
-                # Handle Run to Failure status
-                if run_to_failure_var.get() and current_status != 'Run to Failure':
+
+                # Use connection pool for database operations
+                with db_pool.get_cursor(commit=True) as cursor:
+                    # Update equipment table
                     cursor.execute('''
-                        INSERT OR REPLACE INTO run_to_failure_assets 
-                        (bfm_equipment_no, description, location, technician_name, completion_date, labor_hours, notes)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        UPDATE equipment
+                        SET sap_material_no = %s,
+                            description = %s,
+                            tool_id_drawing_no = %s,
+                            location = %s,
+                            master_lin = %s,
+                            monthly_pm = %s,
+                            six_month_pm = %s,
+                            annual_pm = %s,
+                            status = %s
+                        WHERE bfm_equipment_no = %s
                     ''', (
-                        bfm_no,
+                        entries["SAP Material No:"].get(),
                         entries["Description:"].get(),
+                        entries["Tool ID/Drawing No:"].get(),
                         entries["Location:"].get(),
-                        'System Change',
-                        datetime.now().strftime('%Y-%m-%d'),
-                        0.0,
-                        'Equipment manually set to Run to Failure status via equipment edit dialog'
+                        entries["Master LIN:"].get(),
+                        monthly_var.get(),
+                        six_month_var.get(),
+                        annual_var.get(),
+                        new_status,
+                        bfm_no
                     ))
-                
-                    # Remove from Cannot Find if it was there
-                    cursor.execute('DELETE FROM cannot_find_assets WHERE bfm_equipment_no = %s', (bfm_no,))
-                
-                elif not run_to_failure_var.get() and current_status == 'Run to Failure':
-                    cursor.execute('DELETE FROM run_to_failure_assets WHERE bfm_equipment_no = %s', (bfm_no,))
-            
-                # Handle Cannot Find status - NEW!
-                if cannot_find_var.get():
-                    # Get technician name
-                    technician = tech_var.get().strip()
-                    if not technician:
-                        messagebox.showwarning("Missing Information", "Please select who is reporting this asset as Cannot Find")
-                        return
-                
-                    # Add or update in cannot_find_assets table
-                    cursor.execute('''
-                        INSERT OR REPLACE INTO cannot_find_assets 
-                        (bfm_equipment_no, description, location, technician_name, reported_date, status, notes)
-                        VALUES (%s, %s, %s, %s, %s, 'Missing', %s)
-                    ''', (
-                        bfm_no,
-                        entries["Description:"].get(),
-                        entries["Location:"].get(),
-                        technician,
-                        datetime.now().strftime('%Y-%m-%d'),
-                        'Equipment marked as Cannot Find via equipment edit dialog'
-                    ))
-                
-                    # Remove from Run to Failure if it was there
-                    cursor.execute('DELETE FROM run_to_failure_assets WHERE bfm_equipment_no = %s', (bfm_no,))
-                
-                elif not cannot_find_var.get() and current_status == 'Cannot Find':
-                    # Remove from Cannot Find table
-                    cursor.execute('DELETE FROM cannot_find_assets WHERE bfm_equipment_no = %s', (bfm_no,))
-                    technician = None  # Set to None when unmarking
-            
-                self.conn.commit()
+
+                    # Handle Run to Failure status
+                    if run_to_failure_var.get() and current_status != 'Run to Failure':
+                        cursor.execute('''
+                            INSERT OR REPLACE INTO run_to_failure_assets
+                            (bfm_equipment_no, description, location, technician_name, completion_date, labor_hours, notes)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        ''', (
+                            bfm_no,
+                            entries["Description:"].get(),
+                            entries["Location:"].get(),
+                            'System Change',
+                            datetime.now().strftime('%Y-%m-%d'),
+                            0.0,
+                            'Equipment manually set to Run to Failure status via equipment edit dialog'
+                        ))
+
+                        # Remove from Cannot Find if it was there
+                        cursor.execute('DELETE FROM cannot_find_assets WHERE bfm_equipment_no = %s', (bfm_no,))
+
+                    elif not run_to_failure_var.get() and current_status == 'Run to Failure':
+                        cursor.execute('DELETE FROM run_to_failure_assets WHERE bfm_equipment_no = %s', (bfm_no,))
+
+                    # Handle Cannot Find status - NEW!
+                    if cannot_find_var.get():
+                        # Get technician name
+                        technician = tech_var.get().strip()
+                        if not technician:
+                            messagebox.showwarning("Missing Information", "Please select who is reporting this asset as Cannot Find")
+                            return
+
+                        # Add or update in cannot_find_assets table
+                        cursor.execute('''
+                            INSERT OR REPLACE INTO cannot_find_assets
+                            (bfm_equipment_no, description, location, technician_name, reported_date, status, notes)
+                            VALUES (%s, %s, %s, %s, %s, 'Missing', %s)
+                        ''', (
+                            bfm_no,
+                            entries["Description:"].get(),
+                            entries["Location:"].get(),
+                            technician,
+                            datetime.now().strftime('%Y-%m-%d'),
+                            'Equipment marked as Cannot Find via equipment edit dialog'
+                        ))
+
+                        # Remove from Run to Failure if it was there
+                        cursor.execute('DELETE FROM run_to_failure_assets WHERE bfm_equipment_no = %s', (bfm_no,))
+
+                    elif not cannot_find_var.get() and current_status == 'Cannot Find':
+                        # Remove from Cannot Find table
+                        cursor.execute('DELETE FROM cannot_find_assets WHERE bfm_equipment_no = %s', (bfm_no,))
+                        technician = None  # Set to None when unmarking
             
                 # Show appropriate success message
                 if run_to_failure_var.get():
@@ -14644,7 +14668,6 @@ class AITCMMSSystem:
                     self.update_status(f"Equipment {bfm_no} reactivated")
             
             except Exception as e:
-                self.conn.rollback()
                 messagebox.showerror("Error", f"Failed to update equipment: {str(e)}")
 
         # Buttons
