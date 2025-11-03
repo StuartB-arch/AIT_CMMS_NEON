@@ -1263,12 +1263,30 @@ def generate_monthly_summary_report(conn, month=None, year=None):
     cm_total_hours = cm_hours_result[0] or 0.0
     cm_avg_hours = cm_hours_result[1] or 0.0
 
+    # Get total days open for CMs closed this month (time to close)
+    cursor.execute('''
+        SELECT
+            SUM(completion_date::date - created_date::date) as total_days_to_close,
+            AVG(completion_date::date - created_date::date) as avg_days_to_close
+        FROM corrective_maintenance
+        WHERE EXTRACT(YEAR FROM completion_date::date) = %s
+        AND EXTRACT(MONTH FROM completion_date::date) = %s
+        AND (status = 'Closed' OR status = 'Completed')
+    ''', (year, month))
+
+    closed_days_result = cursor.fetchone()
+    cms_total_days_to_close = closed_days_result[0] or 0
+    cms_avg_days_to_close = closed_days_result[1] or 0.0
+
     # Display Enhanced CM Statistics
     print("CORRECTIVE MAINTENANCE (CM) SUMMARY:")
     print(f"  CMs Created This Month: {cms_created}")
     print(f"  CMs Closed This Month: {cms_closed}")
     print(f"    - Created & Closed in {month_name}: {cms_created_and_closed}")
     print(f"    - Created Before {month_name}, Closed in {month_name}: {cms_closed_from_before}")
+    if cms_closed > 0:
+        print(f"    - Total Days to Close (All Closed CMs): {cms_total_days_to_close} days")
+        print(f"    - Average Days to Close per CM: {cms_avg_days_to_close:.1f} days")
     print(f"  CM Total Labor Hours (Closed): {cm_total_hours:.1f} hours")
     print(f"  CM Average Hours per Closure: {cm_avg_hours:.1f} hours")
     print(f"  Currently Open CMs: {cms_open_current}")
@@ -1763,17 +1781,43 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
         cm_total_hours = cm_hours_result[0] or 0.0
         cm_avg_hours = cm_hours_result[1] or 0.0
 
-        # Build CM breakdown data with conditional days open
+        # Get total days open for CMs closed this month (time to close)
+        cursor.execute('''
+            SELECT
+                SUM(completion_date::date - created_date::date) as total_days_to_close,
+                AVG(completion_date::date - created_date::date) as avg_days_to_close
+            FROM corrective_maintenance
+            WHERE EXTRACT(YEAR FROM completion_date::date) = %s
+            AND EXTRACT(MONTH FROM completion_date::date) = %s
+            AND (status = 'Closed' OR status = 'Completed')
+        ''', (year, month))
+
+        closed_days_result = cursor.fetchone()
+        cms_total_days_to_close = closed_days_result[0] or 0
+        cms_avg_days_to_close = closed_days_result[1] or 0.0
+
+        # Build CM breakdown data with conditional days open/closed
         cm_breakdown_data = [
             ['CATEGORY', 'VALUE'],
             ['CMs Created This Month', str(cms_created)],
             ['CMs Closed This Month', str(cms_closed)],
             ['  - Created & Closed Same Month', str(cms_created_and_closed)],
-            [f'  - Carried Over from Prior Months', str(cms_closed_from_before)],
+            [f'  - Carried Over from Prior Months', str(cms_closed_from_before)]
+        ]
+
+        # Add days to close metrics if there are closed CMs
+        if cms_closed > 0:
+            cm_breakdown_data.extend([
+                ['  - Total Days to Close (All Closed CMs)', f'{cms_total_days_to_close} days'],
+                ['  - Average Days to Close per CM', f'{cms_avg_days_to_close:.1f} days']
+            ])
+
+        # Add labor hours
+        cm_breakdown_data.extend([
             ['CM Total Labor Hours (Closed)', f'{cm_total_hours:.1f} hours'],
             ['CM Average Hours per Closure', f'{cm_avg_hours:.1f} hours'],
             ['Currently Open CMs', str(cms_open_current)]
-        ]
+        ])
 
         # Add days open metrics if there are open CMs
         if cms_open_current > 0:
