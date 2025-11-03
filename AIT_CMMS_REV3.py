@@ -7745,9 +7745,10 @@ class AITCMMSSystem:
 
         ttk.Label(search_frame, text="Search Equipment:").pack(side='left', padx=5)
         self.equipment_search_var = tk.StringVar()
-        self.equipment_search_var.trace('w', self.filter_equipment_list)
         search_entry = ttk.Entry(search_frame, textvariable=self.equipment_search_var, width=30)
         search_entry.pack(side='left', padx=5)
+        # Bind KeyRelease event to trigger filtering as user types
+        search_entry.bind('<KeyRelease>', self.filter_equipment_list)
 
         # Location filter
         ttk.Label(search_frame, text="Filter by Location:").pack(side='left', padx=(20, 5))
