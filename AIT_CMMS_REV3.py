@@ -3779,18 +3779,36 @@ class AITCMMSSystem:
                 try:
                     # End user session
                     if hasattr(self, 'session_id') and self.session_id:
-                        with db_pool.get_cursor() as cursor:
-                            UserManager.end_session(cursor, self.session_id)
-                            print(f"CHECK: User session ended for {self.user_name}")
+                        try:
+                            with db_pool.get_cursor() as cursor:
+                                UserManager.end_session(cursor, self.session_id)
+                                print(f"CHECK: User session ended for {self.user_name}")
+                        except Exception as session_error:
+                            # If database connection already lost, that's okay during shutdown
+                            error_str = str(session_error).lower()
+                            if 'connection' in error_str or 'abort' in error_str:
+                                print(f"INFO: Database connection already closed during session cleanup (this is normal)")
+                            else:
+                                print(f"WARNING: Error ending session: {session_error}")
 
                     # Close main connection if it exists
                     if hasattr(self, 'conn') and self.conn:
-                        self.conn.commit()  # Save any pending changes
-                        db_pool.return_connection(self.conn)
-                        print("CHECK: Database connection returned to pool")
+                        try:
+                            if not self.conn.closed:
+                                self.conn.commit()  # Save any pending changes
+                                db_pool.return_connection(self.conn)
+                                print("CHECK: Database connection returned to pool")
+                            else:
+                                print("INFO: Connection already closed")
+                        except Exception as conn_error:
+                            error_str = str(conn_error).lower()
+                            if 'connection' in error_str or 'abort' in error_str:
+                                print(f"INFO: Database connection already closed during cleanup (this is normal)")
+                            else:
+                                print(f"WARNING: Error returning connection: {conn_error}")
 
                 except Exception as e:
-                    print(f"WARNING: Error during cleanup: {e}")
+                    print(f"WARNING: Unexpected error during cleanup: {e}")
 
                 self.root.destroy()
 

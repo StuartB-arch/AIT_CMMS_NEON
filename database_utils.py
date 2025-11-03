@@ -9,6 +9,7 @@ from contextlib import contextmanager
 from datetime import datetime
 import threading
 import hashlib
+import time
 
 
 class DatabaseConnectionPool:
@@ -30,6 +31,9 @@ class DatabaseConnectionPool:
         if not hasattr(self, 'pool'):
             self.pool = None
             self.config = None
+            self.keepalive_thread = None
+            self.keepalive_stop = threading.Event()
+            self.keepalive_interval = 240  # 4 minutes (less than NEON's 5-minute timeout)
 
     def initialize(self, db_config, min_conn=2, max_conn=10):
         """
@@ -60,6 +64,9 @@ class DatabaseConnectionPool:
                 connect_timeout=10         # 10 second connection timeout
             )
             print(f"Connection pool initialized: {min_conn}-{max_conn} connections with keepalive enabled")
+
+            # Start keepalive thread to prevent NEON free tier from suspending
+            self._start_keepalive_thread()
 
     def get_connection(self):
         """Get a connection from the pool with validation"""
@@ -94,8 +101,48 @@ class DatabaseConnectionPool:
         if self.pool:
             self.pool.putconn(conn)
 
+    def _keepalive_worker(self):
+        """Background thread that keeps connections alive for NEON free tier"""
+        print(f"Keepalive thread started (checking every {self.keepalive_interval}s to prevent NEON suspension)")
+
+        while not self.keepalive_stop.is_set():
+            # Wait for the interval or until stop is signaled
+            if self.keepalive_stop.wait(timeout=self.keepalive_interval):
+                break
+
+            # Send a simple query to keep the connection alive
+            try:
+                with self.get_cursor(commit=False) as cursor:
+                    cursor.execute("SELECT 1")
+                    cursor.fetchone()
+                print("Keepalive ping sent to database")
+            except Exception as e:
+                print(f"Keepalive ping failed (will retry): {e}")
+
+        print("Keepalive thread stopped")
+
+    def _start_keepalive_thread(self):
+        """Start the keepalive background thread"""
+        if self.keepalive_thread is None or not self.keepalive_thread.is_alive():
+            self.keepalive_stop.clear()
+            self.keepalive_thread = threading.Thread(
+                target=self._keepalive_worker,
+                daemon=True,
+                name="DBPoolKeepalive"
+            )
+            self.keepalive_thread.start()
+
+    def _stop_keepalive_thread(self):
+        """Stop the keepalive background thread"""
+        if self.keepalive_thread and self.keepalive_thread.is_alive():
+            self.keepalive_stop.set()
+            self.keepalive_thread.join(timeout=5)
+
     def close_all(self):
         """Close all connections in the pool"""
+        # Stop keepalive thread first
+        self._stop_keepalive_thread()
+
         if self.pool:
             self.pool.closeall()
             self.pool = None
