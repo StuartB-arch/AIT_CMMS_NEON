@@ -7745,10 +7745,10 @@ class AITCMMSSystem:
 
         ttk.Label(search_frame, text="Search Equipment:").pack(side='left', padx=5)
         self.equipment_search_var = tk.StringVar()
-        search_entry = ttk.Entry(search_frame, textvariable=self.equipment_search_var, width=30)
-        search_entry.pack(side='left', padx=5)
+        self.equipment_search_entry = ttk.Entry(search_frame, textvariable=self.equipment_search_var, width=30)
+        self.equipment_search_entry.pack(side='left', padx=5)
         # Bind KeyRelease event to trigger filtering as user types
-        search_entry.bind('<KeyRelease>', self.filter_equipment_list)
+        self.equipment_search_entry.bind('<KeyRelease>', self.filter_equipment_list)
 
         # Location filter
         ttk.Label(search_frame, text="Filter by Location:").pack(side='left', padx=(20, 5))
@@ -14617,7 +14617,8 @@ class AITCMMSSystem:
                     self.populate_location_filter()
                 print(f"DEBUG: Loaded {len(self.equipment_data)} equipment items")
 
-            search_term = self.equipment_search_var.get().lower()
+            # Read search term directly from Entry widget (more reliable than StringVar)
+            search_term = self.equipment_search_entry.get().lower() if hasattr(self, 'equipment_search_entry') else ''
             selected_location = self.equipment_location_var.get()
             print(f"DEBUG: Search term: '{search_term}', Location: '{selected_location}'")
 
@@ -14697,6 +14698,8 @@ class AITCMMSSystem:
 
     def clear_equipment_filters(self):
         """Clear all equipment filters and show all equipment"""
+        if hasattr(self, 'equipment_search_entry'):
+            self.equipment_search_entry.delete(0, 'end')
         self.equipment_search_var.set('')
         self.equipment_location_var.set("All Locations")
         self.filter_equipment_list()
