@@ -14595,6 +14595,13 @@ class AITCMMSSystem:
     
     def filter_equipment_list(self, *args):
         """Filter equipment list based on search term and location"""
+        # Ensure equipment data is loaded
+        if not hasattr(self, 'equipment_data') or not self.equipment_data:
+            self.load_equipment_data()
+            # Also populate the location filter if not done yet
+            if hasattr(self, 'equipment_location_combo'):
+                self.populate_location_filter()
+
         search_term = self.equipment_search_var.get().lower()
         selected_location = self.equipment_location_var.get()
 
