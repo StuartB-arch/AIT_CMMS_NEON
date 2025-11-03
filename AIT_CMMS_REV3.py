@@ -1229,11 +1229,26 @@ def generate_monthly_summary_report(conn, month=None, year=None):
     # Currently open CMs (as of report date)
     cursor.execute('''
         SELECT COUNT(*)
-        FROM corrective_maintenance 
+        FROM corrective_maintenance
         WHERE status = 'Open'
     ''')
 
     cms_open_current = cursor.fetchone()[0] or 0
+
+    # Get CM total labor hours for CMs closed this month
+    cursor.execute('''
+        SELECT
+            SUM(labor_hours) as total_hours,
+            AVG(labor_hours) as avg_hours
+        FROM corrective_maintenance
+        WHERE EXTRACT(YEAR FROM completion_date::date) = %s
+        AND EXTRACT(MONTH FROM completion_date::date) = %s
+        AND (status = 'Closed' OR status = 'Completed')
+    ''', (year, month))
+
+    cm_hours_result = cursor.fetchone()
+    cm_total_hours = cm_hours_result[0] or 0.0
+    cm_avg_hours = cm_hours_result[1] or 0.0
 
     # Display Enhanced CM Statistics
     print("CORRECTIVE MAINTENANCE (CM) SUMMARY:")
@@ -1241,6 +1256,8 @@ def generate_monthly_summary_report(conn, month=None, year=None):
     print(f"  CMs Closed This Month: {cms_closed}")
     print(f"    - Created & Closed in {month_name}: {cms_created_and_closed}")
     print(f"    - Created Before {month_name}, Closed in {month_name}: {cms_closed_from_before}")
+    print(f"  CM Total Labor Hours (Closed): {cm_total_hours:.1f} hours")
+    print(f"  CM Average Hours per Closure: {cm_avg_hours:.1f} hours")
     print(f"  Currently Open CMs: {cms_open_current}")
     print()
 
@@ -1375,6 +1392,7 @@ def generate_monthly_summary_report(conn, month=None, year=None):
         print()
     
     # 5. CM BREAKDOWN BY PRIORITY AND TECHNICIAN
+    # First show CMs created this month by priority
     cursor.execute('''
         SELECT
             priority,
@@ -1392,22 +1410,58 @@ def generate_monthly_summary_report(conn, month=None, year=None):
                 ELSE 5
             END
     ''', (year, month))
-    
-    cm_priorities = cursor.fetchall()
-    
-    if cm_priorities:
+
+    cm_priorities_created = cursor.fetchall()
+
+    if cm_priorities_created:
         print("CM BREAKDOWN BY PRIORITY (Created This Month):")
         print(f"{'Priority':<15} {'Count':<10}")
         print("-" * 25)
-        for priority, count in cm_priorities:
+        for priority, count in cm_priorities_created:
             print(f"{priority:<15} {count:<10}")
+        print()
+
+    # Now show CMs closed this month by priority with hours
+    cursor.execute('''
+        SELECT
+            priority,
+            COUNT(*) as count,
+            SUM(labor_hours) as total_hours,
+            AVG(labor_hours) as avg_hours
+        FROM corrective_maintenance
+        WHERE EXTRACT(YEAR FROM completion_date::date) = %s
+        AND EXTRACT(MONTH FROM completion_date::date) = %s
+        AND (status = 'Closed' OR status = 'Completed')
+        GROUP BY priority
+        ORDER BY
+            CASE priority
+                WHEN 'Critical' THEN 1
+                WHEN 'High' THEN 2
+                WHEN 'Medium' THEN 3
+                WHEN 'Low' THEN 4
+                ELSE 5
+            END
+    ''', (year, month))
+
+    cm_priorities_closed = cursor.fetchall()
+
+    if cm_priorities_closed:
+        print("CM BREAKDOWN BY PRIORITY (Closed This Month):")
+        print(f"{'Priority':<15} {'Count':<10} {'Total Hours':<15} {'Avg Hours':<12}")
+        print("-" * 55)
+        for priority, count, total_hrs, avg_hrs in cm_priorities_closed:
+            total_hrs_display = f"{total_hrs:.1f}h" if total_hrs else "0.0h"
+            avg_hrs_display = f"{avg_hrs:.1f}h" if avg_hrs else "0.0h"
+            print(f"{priority:<15} {count:<10} {total_hrs_display:<15} {avg_hrs_display:<12}")
         print()
     
     # CM completion by technician
     cursor.execute('''
         SELECT
             assigned_technician,
-            COUNT(*) as completed
+            COUNT(*) as completed,
+            SUM(labor_hours) as total_hours,
+            AVG(labor_hours) as avg_hours
         FROM corrective_maintenance
         WHERE EXTRACT(YEAR FROM completion_date::date) = %s
         AND EXTRACT(MONTH FROM completion_date::date) = %s
@@ -1415,15 +1469,17 @@ def generate_monthly_summary_report(conn, month=None, year=None):
         GROUP BY assigned_technician
         ORDER BY completed DESC
     ''', (year, month))
-    
+
     cm_techs = cursor.fetchall()
-    
+
     if cm_techs:
         print("CMs COMPLETED BY TECHNICIAN (This Month):")
-        print(f"{'Technician':<25} {'CMs Closed':<12}")
-        print("-" * 37)
-        for tech, count in cm_techs:
-            print(f"{tech:<25} {count:<12}")
+        print(f"{'Technician':<25} {'CMs Closed':<12} {'Total Hours':<15} {'Avg Hours':<12}")
+        print("-" * 67)
+        for tech, count, total_hrs, avg_hrs in cm_techs:
+            total_hrs_display = f"{total_hrs:.1f}h" if total_hrs else "0.0h"
+            avg_hrs_display = f"{avg_hrs:.1f}h" if avg_hrs else "0.0h"
+            print(f"{tech:<25} {count:<12} {total_hrs_display:<15} {avg_hrs_display:<12}")
         print()
     
     # 6. EQUIPMENT LOCATION SUMMARY (PM Completions only)
@@ -1662,13 +1718,30 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
     
         cursor.execute("SELECT COUNT(*) FROM corrective_maintenance WHERE status = 'Open'")
         cms_open_current = cursor.fetchone()[0] or 0
-        
+
+        # Get CM total labor hours for CMs closed this month
+        cursor.execute('''
+            SELECT
+                SUM(labor_hours) as total_hours,
+                AVG(labor_hours) as avg_hours
+            FROM corrective_maintenance
+            WHERE EXTRACT(YEAR FROM completion_date::date) = %s
+            AND EXTRACT(MONTH FROM completion_date::date) = %s
+            AND (status = 'Closed' OR status = 'Completed')
+        ''', (year, month))
+
+        cm_hours_result = cursor.fetchone()
+        cm_total_hours = cm_hours_result[0] or 0.0
+        cm_avg_hours = cm_hours_result[1] or 0.0
+
         cm_breakdown_data = [
-            ['CATEGORY', 'COUNT'],
+            ['CATEGORY', 'VALUE'],
             ['CMs Created This Month', str(cms_created)],
             ['CMs Closed This Month', str(cms_closed)],
             ['  - Created & Closed Same Month', str(cms_created_and_closed)],
             [f'  - Carried Over from Prior Months', str(cms_closed_from_before)],
+            ['CM Total Labor Hours (Closed)', f'{cm_total_hours:.1f} hours'],
+            ['CM Average Hours per Closure', f'{cm_avg_hours:.1f} hours'],
             ['Currently Open CMs', str(cms_open_current)]
         ]
     
@@ -1741,7 +1814,120 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
         
             story.append(cm_detail_table)
             story.append(Spacer(1, 20))
-    
+
+        # ==================== CM BREAKDOWN BY PRIORITY ====================
+        story.append(Paragraph("CM BREAKDOWN BY PRIORITY (Closed This Month)", subheading_style))
+        story.append(Spacer(1, 8))
+
+        cursor.execute('''
+            SELECT
+                priority,
+                COUNT(*) as count,
+                SUM(labor_hours) as total_hours,
+                AVG(labor_hours) as avg_hours
+            FROM corrective_maintenance
+            WHERE EXTRACT(YEAR FROM completion_date::date) = %s
+            AND EXTRACT(MONTH FROM completion_date::date) = %s
+            AND (status = 'Closed' OR status = 'Completed')
+            GROUP BY priority
+            ORDER BY
+                CASE priority
+                    WHEN 'Critical' THEN 1
+                    WHEN 'High' THEN 2
+                    WHEN 'Medium' THEN 3
+                    WHEN 'Low' THEN 4
+                    ELSE 5
+                END
+        ''', (year, month))
+
+        cm_priorities = cursor.fetchall()
+
+        if cm_priorities:
+            cm_priority_data = [['Priority', 'Count', 'Total Hours', 'Avg Hours']]
+
+            for priority, count, total_hrs, avg_hrs in cm_priorities:
+                cm_priority_data.append([
+                    priority,
+                    str(count),
+                    f'{total_hrs:.1f}' if total_hrs else '0.0',
+                    f'{avg_hrs:.1f}' if avg_hrs else '0.0'
+                ])
+
+            cm_priority_table = Table(cm_priority_data, colWidths=[2*inch, 1.5*inch, 1.5*inch, 1.5*inch])
+            cm_priority_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c5282')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+                ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 11),
+                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 1), (-1, -1), 10),
+                ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#cbd5e0')),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('LEFTPADDING', (0, 0), (-1, -1), 12),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 12),
+                ('TOPPADDING', (0, 0), (-1, -1), 8),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f7fafc')])
+            ]))
+
+            story.append(cm_priority_table)
+            story.append(Spacer(1, 20))
+
+        # ==================== CM BREAKDOWN BY TECHNICIAN ====================
+        story.append(Paragraph("CMs COMPLETED BY TECHNICIAN (This Month)", subheading_style))
+        story.append(Spacer(1, 8))
+
+        cursor.execute('''
+            SELECT
+                assigned_technician,
+                COUNT(*) as completed,
+                SUM(labor_hours) as total_hours,
+                AVG(labor_hours) as avg_hours
+            FROM corrective_maintenance
+            WHERE EXTRACT(YEAR FROM completion_date::date) = %s
+            AND EXTRACT(MONTH FROM completion_date::date) = %s
+            AND (status = 'Closed' OR status = 'Completed')
+            GROUP BY assigned_technician
+            ORDER BY completed DESC
+        ''', (year, month))
+
+        cm_techs = cursor.fetchall()
+
+        if cm_techs:
+            cm_tech_data = [['Technician', 'CMs Closed', 'Total Hours', 'Avg Hours']]
+
+            for tech, count, total_hrs, avg_hrs in cm_techs:
+                cm_tech_data.append([
+                    tech if tech else 'Unassigned',
+                    str(count),
+                    f'{total_hrs:.1f}' if total_hrs else '0.0',
+                    f'{avg_hrs:.1f}' if avg_hrs else '0.0'
+                ])
+
+            cm_tech_table = Table(cm_tech_data, colWidths=[2.5*inch, 1.5*inch, 1.5*inch, 1.5*inch])
+            cm_tech_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c5282')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+                ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 11),
+                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 1), (-1, -1), 10),
+                ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#cbd5e0')),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('LEFTPADDING', (0, 0), (-1, -1), 12),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 12),
+                ('TOPPADDING', (0, 0), (-1, -1), 8),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f7fafc')])
+            ]))
+
+            story.append(cm_tech_table)
+            story.append(Spacer(1, 20))
+
         # ==================== PM TYPE BREAKDOWN ====================
         story.append(Paragraph("PREVENTIVE MAINTENANCE BREAKDOWN", heading_style))
         story.append(Spacer(1, 10))
