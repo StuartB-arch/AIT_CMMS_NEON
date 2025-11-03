@@ -14598,6 +14598,15 @@ class AITCMMSSystem:
         try:
             print("DEBUG: filter_equipment_list called")
 
+            # Check if equipment tree exists yet (might be called during tab creation)
+            if not hasattr(self, 'equipment_tree'):
+                print("DEBUG: equipment_tree not created yet, skipping filter")
+                return
+
+            # Update status bar to show function is being called
+            if hasattr(self, 'update_status'):
+                self.update_status("Filtering equipment...")
+
             # Ensure equipment data is loaded
             if not hasattr(self, 'equipment_data') or not self.equipment_data:
                 print("DEBUG: Loading equipment data...")
@@ -14653,10 +14662,19 @@ class AITCMMSSystem:
 
             print(f"DEBUG: Found {matches_found} matching equipment items")
 
+            # Update status bar with results
+            if hasattr(self, 'update_status'):
+                if search_term:
+                    self.update_status(f"Found {matches_found} equipment matching '{search_term}'")
+                else:
+                    self.update_status(f"Showing {matches_found} equipment items")
+
         except Exception as e:
             print(f"ERROR in filter_equipment_list: {e}")
             import traceback
             traceback.print_exc()
+            if hasattr(self, 'update_status'):
+                self.update_status(f"Error filtering equipment: {e}")
 
     def populate_location_filter(self):
         """Populate location filter dropdown with distinct locations from database"""
