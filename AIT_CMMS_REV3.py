@@ -1238,8 +1238,8 @@ def generate_monthly_summary_report(conn, month=None, year=None):
     # Get total days open for currently open CMs
     cursor.execute('''
         SELECT
-            SUM(CAST(julianday('now') - julianday(created_date) AS INTEGER)) as total_days_open,
-            AVG(CAST(julianday('now') - julianday(created_date) AS INTEGER)) as avg_days_open
+            SUM(CURRENT_DATE - created_date::date) as total_days_open,
+            AVG(CURRENT_DATE - created_date::date) as avg_days_open
         FROM corrective_maintenance
         WHERE status = 'Open'
     ''')
@@ -1738,8 +1738,8 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
         # Get total days open for currently open CMs
         cursor.execute('''
             SELECT
-                SUM(CAST(julianday('now') - julianday(created_date) AS INTEGER)) as total_days_open,
-                AVG(CAST(julianday('now') - julianday(created_date) AS INTEGER)) as avg_days_open
+                SUM(CURRENT_DATE - created_date::date) as total_days_open,
+                AVG(CURRENT_DATE - created_date::date) as avg_days_open
             FROM corrective_maintenance
             WHERE status = 'Open'
         ''')
