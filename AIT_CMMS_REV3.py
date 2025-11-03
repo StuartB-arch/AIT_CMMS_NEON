@@ -14595,53 +14595,68 @@ class AITCMMSSystem:
     
     def filter_equipment_list(self, *args):
         """Filter equipment list based on search term and location"""
-        # Ensure equipment data is loaded
-        if not hasattr(self, 'equipment_data') or not self.equipment_data:
-            self.load_equipment_data()
-            # Also populate the location filter if not done yet
-            if hasattr(self, 'equipment_location_combo'):
-                self.populate_location_filter()
+        try:
+            print("DEBUG: filter_equipment_list called")
 
-        search_term = self.equipment_search_var.get().lower()
-        selected_location = self.equipment_location_var.get()
+            # Ensure equipment data is loaded
+            if not hasattr(self, 'equipment_data') or not self.equipment_data:
+                print("DEBUG: Loading equipment data...")
+                self.load_equipment_data()
+                # Also populate the location filter if not done yet
+                if hasattr(self, 'equipment_location_combo'):
+                    self.populate_location_filter()
+                print(f"DEBUG: Loaded {len(self.equipment_data)} equipment items")
 
-        # Clear existing items
-        for item in self.equipment_tree.get_children():
-            self.equipment_tree.delete(item)
+            search_term = self.equipment_search_var.get().lower()
+            selected_location = self.equipment_location_var.get()
+            print(f"DEBUG: Search term: '{search_term}', Location: '{selected_location}'")
 
-        # Add filtered equipment
-        for equipment in self.equipment_data:
-            if len(equipment) >= 9:
-                equipment_location = equipment[5] or ''
+            # Clear existing items
+            for item in self.equipment_tree.get_children():
+                self.equipment_tree.delete(item)
 
-                # Check location filter
-                location_match = (selected_location == "All Locations" or
-                                equipment_location == selected_location)
+            # Add filtered equipment
+            matches_found = 0
+            for equipment in self.equipment_data:
+                if len(equipment) >= 9:
+                    equipment_location = equipment[5] or ''
 
-                if not location_match:
-                    continue
+                    # Check location filter
+                    location_match = (selected_location == "All Locations" or
+                                    equipment_location == selected_location)
 
-                # Check if search term matches any field
-                searchable_fields = [
-                    equipment[1] or '',  # SAP
-                    equipment[2] or '',  # BFM
-                    equipment[3] or '',  # Description
-                    equipment_location,  # Location
-                    equipment[6] or ''   # Master LIN
-                ]
+                    if not location_match:
+                        continue
 
-                if not search_term or any(search_term in field.lower() for field in searchable_fields):
-                    self.equipment_tree.insert('', 'end', values=(
+                    # Check if search term matches any field
+                    searchable_fields = [
                         equipment[1] or '',  # SAP
                         equipment[2] or '',  # BFM
                         equipment[3] or '',  # Description
                         equipment_location,  # Location
-                        equipment[6] or '',  # Master LIN
-                        'Yes' if equipment[7] else 'No',  # Monthly PM
-                        'Yes' if equipment[8] else 'No',  # Six Month PM
-                        'Yes' if equipment[9] else 'No',  # Annual PM
-                        equipment[16] or 'Active'  # Status
-                    ))
+                        equipment[6] or ''   # Master LIN
+                    ]
+
+                    if not search_term or any(search_term in field.lower() for field in searchable_fields):
+                        self.equipment_tree.insert('', 'end', values=(
+                            equipment[1] or '',  # SAP
+                            equipment[2] or '',  # BFM
+                            equipment[3] or '',  # Description
+                            equipment_location,  # Location
+                            equipment[6] or '',  # Master LIN
+                            'Yes' if equipment[7] else 'No',  # Monthly PM
+                            'Yes' if equipment[8] else 'No',  # Six Month PM
+                            'Yes' if equipment[9] else 'No',  # Annual PM
+                            equipment[16] or 'Active'  # Status
+                        ))
+                        matches_found += 1
+
+            print(f"DEBUG: Found {matches_found} matching equipment items")
+
+        except Exception as e:
+            print(f"ERROR in filter_equipment_list: {e}")
+            import traceback
+            traceback.print_exc()
 
     def populate_location_filter(self):
         """Populate location filter dropdown with distinct locations from database"""
