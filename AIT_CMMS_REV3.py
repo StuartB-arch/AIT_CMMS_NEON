@@ -1235,6 +1235,19 @@ def generate_monthly_summary_report(conn, month=None, year=None):
 
     cms_open_current = cursor.fetchone()[0] or 0
 
+    # Get total days open for currently open CMs
+    cursor.execute('''
+        SELECT
+            SUM(CURRENT_DATE - created_date::date) as total_days_open,
+            AVG(CURRENT_DATE - created_date::date) as avg_days_open
+        FROM corrective_maintenance
+        WHERE status = 'Open'
+    ''')
+
+    open_days_result = cursor.fetchone()
+    cms_total_days_open = open_days_result[0] or 0
+    cms_avg_days_open = open_days_result[1] or 0.0
+
     # Get CM total labor hours for CMs closed this month
     cursor.execute('''
         SELECT
@@ -1259,6 +1272,9 @@ def generate_monthly_summary_report(conn, month=None, year=None):
     print(f"  CM Total Labor Hours (Closed): {cm_total_hours:.1f} hours")
     print(f"  CM Average Hours per Closure: {cm_avg_hours:.1f} hours")
     print(f"  Currently Open CMs: {cms_open_current}")
+    if cms_open_current > 0:
+        print(f"    - Total Days Open (All Open CMs): {cms_total_days_open} days")
+        print(f"    - Average Days Open per CM: {cms_avg_days_open:.1f} days")
     print()
 
     # NEW: Show details of CMs closed from previous months (if any)
@@ -1719,6 +1735,19 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
         cursor.execute("SELECT COUNT(*) FROM corrective_maintenance WHERE status = 'Open'")
         cms_open_current = cursor.fetchone()[0] or 0
 
+        # Get total days open for currently open CMs
+        cursor.execute('''
+            SELECT
+                SUM(CURRENT_DATE - created_date::date) as total_days_open,
+                AVG(CURRENT_DATE - created_date::date) as avg_days_open
+            FROM corrective_maintenance
+            WHERE status = 'Open'
+        ''')
+
+        open_days_result = cursor.fetchone()
+        cms_total_days_open = open_days_result[0] or 0
+        cms_avg_days_open = open_days_result[1] or 0.0
+
         # Get CM total labor hours for CMs closed this month
         cursor.execute('''
             SELECT
@@ -1734,6 +1763,7 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
         cm_total_hours = cm_hours_result[0] or 0.0
         cm_avg_hours = cm_hours_result[1] or 0.0
 
+        # Build CM breakdown data with conditional days open
         cm_breakdown_data = [
             ['CATEGORY', 'VALUE'],
             ['CMs Created This Month', str(cms_created)],
@@ -1744,6 +1774,13 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
             ['CM Average Hours per Closure', f'{cm_avg_hours:.1f} hours'],
             ['Currently Open CMs', str(cms_open_current)]
         ]
+
+        # Add days open metrics if there are open CMs
+        if cms_open_current > 0:
+            cm_breakdown_data.extend([
+                ['  - Total Days Open (All Open CMs)', f'{cms_total_days_open} days'],
+                ['  - Average Days Open per CM', f'{cms_avg_days_open:.1f} days']
+            ])
     
         cm_table = Table(cm_breakdown_data, colWidths=[4.5*inch, 1.5*inch])
         cm_table.setStyle(TableStyle([
