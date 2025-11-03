@@ -7798,8 +7798,11 @@ class AITCMMSSystem:
         
         list_frame.grid_rowconfigure(0, weight=1)
         list_frame.grid_columnconfigure(0, weight=1)
-        
-    
+
+        # Initialize equipment data on tab creation
+        self.refresh_equipment_list()
+
+
     
     
     
