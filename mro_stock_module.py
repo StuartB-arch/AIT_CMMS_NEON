@@ -661,22 +661,21 @@ class MROStockManager:
 
         try:
             # Get full part data - use explicit column list to ensure correct order
-            cursor = self.conn.cursor()
-            cursor.execute('''
-                SELECT id, name, part_number, model_number, equipment, engineering_system,
-                       unit_of_measure, quantity_in_stock, unit_price, minimum_stock,
-                       supplier, location, rack, row, bin, picture_1_path,
-                       picture_2_path, picture_1_data, picture_2_data, notes,
-                       last_updated, created_date, status
-                FROM mro_inventory WHERE part_number = %s
-            ''', (part_number,))
-            part_data = cursor.fetchone()
+            with db_pool.get_cursor(commit=False) as cursor:
+                cursor.execute('''
+                    SELECT id, name, part_number, model_number, equipment, engineering_system,
+                           unit_of_measure, quantity_in_stock, unit_price, minimum_stock,
+                           supplier, location, rack, row, bin, picture_1_path,
+                           picture_2_path, picture_1_data, picture_2_data, notes,
+                           last_updated, created_date, status
+                    FROM mro_inventory WHERE part_number = %s
+                ''', (part_number,))
+                part_data = cursor.fetchone()
 
-            if not part_data:
-                messagebox.showerror("Error", "Part not found")
-                return
+                if not part_data:
+                    messagebox.showerror("Error", "Part not found")
+                    return
         except Exception as e:
-            self.conn.rollback()
             messagebox.showerror("Database Error", f"Error loading part data: {str(e)}")
             return
 
@@ -851,13 +850,13 @@ class MROStockManager:
                 pic2_path = fields['picture_2'].get()
 
                 # Get existing photo data and paths from database first
-                cursor = self.conn.cursor()
-                cursor.execute('SELECT picture_1_path, picture_2_path, picture_1_data, picture_2_data FROM mro_inventory WHERE part_number = %s', (part_number,))
-                existing_data = cursor.fetchone()
-                existing_pic1_path = existing_data[0] if existing_data else None
-                existing_pic2_path = existing_data[1] if existing_data else None
-                existing_pic1_data = existing_data[2] if existing_data else None
-                existing_pic2_data = existing_data[3] if existing_data else None
+                with db_pool.get_cursor(commit=False) as cursor:
+                    cursor.execute('SELECT picture_1_path, picture_2_path, picture_1_data, picture_2_data FROM mro_inventory WHERE part_number = %s', (part_number,))
+                    existing_data = cursor.fetchone()
+                    existing_pic1_path = existing_data[0] if existing_data else None
+                    existing_pic2_path = existing_data[1] if existing_data else None
+                    existing_pic1_data = existing_data[2] if existing_data else None
+                    existing_pic2_data = existing_data[3] if existing_data else None
 
                 # Only read new photo data if a NEW file is selected
                 # Default to existing data and paths
@@ -882,40 +881,40 @@ class MROStockManager:
 
                 notes_text = fields['notes'].get('1.0', 'end-1c')
 
-                cursor.execute('''
-                    UPDATE mro_inventory SET
-                        name = %s, model_number = %s, equipment = %s, engineering_system = %s,
-                        unit_of_measure = %s, quantity_in_stock = %s, unit_price = %s,
-                        minimum_stock = %s, supplier = %s, location = %s, rack = %s,
-                        row = %s, bin = %s, picture_1_path = %s, picture_2_path = %s,
-                        picture_1_data = %s, picture_2_data = %s,
-                        notes = %s, status = %s, last_updated = %s
-                    WHERE part_number = %s
-                ''', (
-                    fields['name'].get(),
-                    fields['model_number'].get(),
-                    fields['equipment'].get(),
-                    fields['engineering_system'].get(),
-                    fields['unit_of_measure'].get(),
-                    float(fields['quantity_in_stock'].get() or 0),
-                    float(fields['unit_price'].get() or 0),
-                    float(fields['minimum_stock'].get() or 0),
-                    fields['supplier'].get(),
-                    fields['location'].get(),
-                    fields['rack'].get(),
-                    fields['row'].get(),
-                    fields['bin'].get(),
-                    final_pic1_path,
-                    final_pic2_path,
-                    pic1_data,
-                    pic2_data,
-                    notes_text,
-                    fields['status'].get(),
-                    datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                    part_number
-                ))
+                with db_pool.get_cursor(commit=True) as cursor:
+                    cursor.execute('''
+                        UPDATE mro_inventory SET
+                            name = %s, model_number = %s, equipment = %s, engineering_system = %s,
+                            unit_of_measure = %s, quantity_in_stock = %s, unit_price = %s,
+                            minimum_stock = %s, supplier = %s, location = %s, rack = %s,
+                            row = %s, bin = %s, picture_1_path = %s, picture_2_path = %s,
+                            picture_1_data = %s, picture_2_data = %s,
+                            notes = %s, status = %s, last_updated = %s
+                        WHERE part_number = %s
+                    ''', (
+                        fields['name'].get(),
+                        fields['model_number'].get(),
+                        fields['equipment'].get(),
+                        fields['engineering_system'].get(),
+                        fields['unit_of_measure'].get(),
+                        float(fields['quantity_in_stock'].get() or 0),
+                        float(fields['unit_price'].get() or 0),
+                        float(fields['minimum_stock'].get() or 0),
+                        fields['supplier'].get(),
+                        fields['location'].get(),
+                        fields['rack'].get(),
+                        fields['row'].get(),
+                        fields['bin'].get(),
+                        final_pic1_path,
+                        final_pic2_path,
+                        pic1_data,
+                        pic2_data,
+                        notes_text,
+                        fields['status'].get(),
+                        datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                        part_number
+                    ))
 
-                self.conn.commit()
                 messagebox.showinfo("Success", "Part updated successfully!")
                 dialog.destroy()
                 self.refresh_mro_list()
@@ -949,9 +948,8 @@ class MROStockManager:
         
         if result:
             try:
-                cursor = self.conn.cursor()
-                cursor.execute('DELETE FROM mro_inventory WHERE part_number = %s', (part_number,))
-                self.conn.commit()
+                with db_pool.get_cursor(commit=True) as cursor:
+                    cursor.execute('DELETE FROM mro_inventory WHERE part_number = %s', (part_number,))
                 messagebox.showinfo("Success", "Part deleted successfully!")
                 self.refresh_mro_list()
             except Exception as e:
@@ -970,16 +968,16 @@ class MROStockManager:
 
         try:
             # Get full part data - use explicit column list to ensure correct order
-            cursor = self.conn.cursor()
-            cursor.execute('''
-                SELECT id, name, part_number, model_number, equipment, engineering_system,
-                       unit_of_measure, quantity_in_stock, unit_price, minimum_stock,
-                       supplier, location, rack, row, bin, picture_1_path,
-                       picture_2_path, picture_1_data, picture_2_data, notes,
-                       last_updated, created_date, status
-                FROM mro_inventory WHERE part_number = %s
-            ''', (part_number,))
-            part_data = cursor.fetchone()
+            with db_pool.get_cursor(commit=False) as cursor:
+                cursor.execute('''
+                    SELECT id, name, part_number, model_number, equipment, engineering_system,
+                           unit_of_measure, quantity_in_stock, unit_price, minimum_stock,
+                           supplier, location, rack, row, bin, picture_1_path,
+                           picture_2_path, picture_1_data, picture_2_data, notes,
+                           last_updated, created_date, status
+                    FROM mro_inventory WHERE part_number = %s
+                ''', (part_number,))
+                part_data = cursor.fetchone()
 
             if not part_data:
                 messagebox.showerror("Error", "Part not found")
@@ -1876,73 +1874,72 @@ class MROStockManager:
 
         query += ' ORDER BY part_number'
 
-        cursor = self.conn.cursor()
-        cursor.execute(query, params)
+        with db_pool.get_cursor(commit=False) as cursor:
+            cursor.execute(query, params)
 
-        # OPTIMIZED: Process results with reduced column set
-        for idx, row in enumerate(cursor.fetchall()):
-            # New column indices for optimized query (only 11 columns)
-            part_number = row[0]
-            name = row[1]
-            model_number = row[2]
-            equipment = row[3]
-            engineering_system = row[4]
-            unit_of_measure = row[5]
-            qty = float(row[6])
-            unit_price = float(row[7])
-            min_stock = float(row[8])
-            location = row[9]
-            status = row[10]
+            # OPTIMIZED: Process results with reduced column set
+            for idx, row in enumerate(cursor.fetchall()):
+                # New column indices for optimized query (only 11 columns)
+                part_number = row[0]
+                name = row[1]
+                model_number = row[2]
+                equipment = row[3]
+                engineering_system = row[4]
+                unit_of_measure = row[5]
+                qty = float(row[6])
+                unit_price = float(row[7])
+                min_stock = float(row[8])
+                location = row[9]
+                status = row[10]
 
-            # Determine display status
-            display_status = '⚠️ LOW' if qty < min_stock else status
+                # Determine display status
+                display_status = '⚠️ LOW' if qty < min_stock else status
 
-            self.mro_tree.insert('', 'end', values=(
-                part_number,
-                name,
-                model_number,
-                equipment,
-                engineering_system,
-                f"{qty:.1f}",
-                f"{min_stock:.1f}",
-                unit_of_measure,
-                f"${unit_price:.2f}",
-                location,
-                display_status
-            ), tags=('low_stock',) if qty < min_stock else ())
+                self.mro_tree.insert('', 'end', values=(
+                    part_number,
+                    name,
+                    model_number,
+                    equipment,
+                    engineering_system,
+                    f"{qty:.1f}",
+                    f"{min_stock:.1f}",
+                    unit_of_measure,
+                    f"${unit_price:.2f}",
+                    location,
+                    display_status
+                ), tags=('low_stock',) if qty < min_stock else ())
 
-            # Yield to event loop every 50 items to keep UI responsive
-            if idx % 50 == 0:
-                self.root.update_idletasks()
+                # Yield to event loop every 50 items to keep UI responsive
+                if idx % 50 == 0:
+                    self.root.update_idletasks()
 
         # Color low stock items
         self.mro_tree.tag_configure('low_stock', background='#ffcccc')
     
     def update_mro_statistics(self):
         """Update inventory statistics - OPTIMIZED to use single query"""
-        cursor = self.conn.cursor()
+        with db_pool.get_cursor(commit=False) as cursor:
+            # OPTIMIZED: Combined query - 3x faster than separate queries
+            # Uses the covering index idx_mro_active_stock_value
+            cursor.execute('''
+                SELECT
+                    COUNT(*) as total_parts,
+                    COALESCE(SUM(quantity_in_stock * unit_price), 0) as total_value,
+                    COUNT(*) FILTER (WHERE quantity_in_stock < minimum_stock) as low_stock_count
+                FROM mro_inventory
+                WHERE status = 'Active'
+            ''')
 
-        # OPTIMIZED: Combined query - 3x faster than separate queries
-        # Uses the covering index idx_mro_active_stock_value
-        cursor.execute('''
-            SELECT
-                COUNT(*) as total_parts,
-                COALESCE(SUM(quantity_in_stock * unit_price), 0) as total_value,
-                COUNT(*) FILTER (WHERE quantity_in_stock < minimum_stock) as low_stock_count
-            FROM mro_inventory
-            WHERE status = 'Active'
-        ''')
+            result = cursor.fetchone()
+            total = result[0]
+            value = result[1]
+            low_stock = result[2]
 
-        result = cursor.fetchone()
-        total = result[0]
-        value = result[1]
-        low_stock = result[2]
+            stats_text = (f"Total Parts: {total} | "
+                         f"Total Value: ${value:,.2f} | "
+                         f"Low Stock Items: {low_stock}")
 
-        stats_text = (f"Total Parts: {total} | "
-                     f"Total Value: ${value:,.2f} | "
-                     f"Low Stock Items: {low_stock}")
-
-        self.mro_stats_label.config(text=stats_text)
+            self.mro_stats_label.config(text=stats_text)
     
     def sort_mro_column(self, col):
         """Sort MRO treeview by column"""
