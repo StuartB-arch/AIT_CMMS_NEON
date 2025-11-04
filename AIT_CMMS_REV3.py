@@ -14393,12 +14393,12 @@ class AITCMMSSystem:
 
         # Pre-populate fields
         fields = [
-            ("SAP Material No:", tk.StringVar(value=equipment_data[1] or '')),
-            ("BFM Equipment No:", tk.StringVar(value=equipment_data[2] or '')),
-            ("Description:", tk.StringVar(value=equipment_data[3] or '')),
-            ("Tool ID/Drawing No:", tk.StringVar(value=equipment_data[4] or '')),
-            ("Location:", tk.StringVar(value=equipment_data[5] or '')),
-            ("Master LIN:", tk.StringVar(value=equipment_data[6] or ''))
+            ("SAP Material No:", tk.StringVar(value=equipment_data['sap_material_no'] or '')),
+            ("BFM Equipment No:", tk.StringVar(value=equipment_data['bfm_equipment_no'] or '')),
+            ("Description:", tk.StringVar(value=equipment_data['description'] or '')),
+            ("Tool ID/Drawing No:", tk.StringVar(value=equipment_data['tool_id_drawing_no'] or '')),
+            ("Location:", tk.StringVar(value=equipment_data['location'] or '')),
+            ("Master LIN:", tk.StringVar(value=equipment_data['master_lin'] or ''))
         ]
 
         entries = {}
@@ -14414,12 +14414,12 @@ class AITCMMSSystem:
         pm_frame.grid(row=len(fields), column=0, columnspan=2, padx=10, pady=10, sticky='ew')
 
         # Current equipment status
-        current_status = equipment_data[16] or 'Active'  # Status field
+        current_status = equipment_data['status'] or 'Active'  # Status field
 
         # PM checkboxes
-        monthly_var = tk.BooleanVar(value=bool(equipment_data[7]))
-        six_month_var = tk.BooleanVar(value=bool(equipment_data[8]))
-        annual_var = tk.BooleanVar(value=bool(equipment_data[9]))
+        monthly_var = tk.BooleanVar(value=bool(equipment_data['monthly_pm']))
+        six_month_var = tk.BooleanVar(value=bool(equipment_data['six_month_pm']))
+        annual_var = tk.BooleanVar(value=bool(equipment_data['annual_pm']))
 
         monthly_cb = ttk.Checkbutton(pm_frame, text="Monthly PM", variable=monthly_var)
         monthly_cb.pack(anchor='w')
