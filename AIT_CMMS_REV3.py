@@ -10184,9 +10184,9 @@ class AITCMMSSystem:
                                                             pm_due_date, special_equipment, notes, next_annual_pm)
 
                 if success:
-                    # Commit transaction
-                    cursor.execute('COMMIT')
-                
+                    # Commit transaction - CRITICAL: Must use self.conn.commit(), not cursor.execute()
+                    self.conn.commit()
+
                     # WARNING: VERIFY the completion was saved correctly
                     verification_result = self.verify_pm_completion_saved(cursor, bfm_no, pm_type, technician, completion_date)
                 
@@ -10214,13 +10214,13 @@ class AITCMMSSystem:
                                         f"Please check the PM History tab to confirm the completion was recorded.")
                         self.update_status(f"WARNING: PM saved but verification incomplete: {bfm_no}")
                 else:
-                    # Rollback on failure
-                    cursor.execute('ROLLBACK')
+                    # Rollback on failure - CRITICAL: Must use self.conn.rollback(), not cursor.execute()
+                    self.conn.rollback()
                     messagebox.showerror("Error", "Failed to process PM completion. Transaction rolled back.")
-                
+
             except Exception as e:
-                # Rollback on exception
-                cursor.execute('ROLLBACK')
+                # Rollback on exception - CRITICAL: Must use self.conn.rollback(), not cursor.execute()
+                self.conn.rollback()
                 raise e
 
         except Exception as e:
