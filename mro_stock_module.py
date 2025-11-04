@@ -699,13 +699,8 @@ class MROStockManager:
         canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
 
-        # Parse part_data - column order matches SELECT query above
-        columns = ['id', 'name', 'part_number', 'model_number', 'equipment', 'engineering_system',
-                  'unit_of_measure', 'quantity_in_stock', 'unit_price', 'minimum_stock',
-                  'supplier', 'location', 'rack', 'row', 'bin', 'picture_1_path',
-                  'picture_2_path', 'picture_1_data', 'picture_2_data', 'notes', 'last_updated', 'created_date', 'status']
-
-        part_dict = dict(zip(columns, part_data))
+        # part_data is already a dictionary from RealDictCursor, use it directly
+        part_dict = part_data
         
         # Form fields (similar structure to add_part_dialog)
         fields = {}
@@ -1019,11 +1014,31 @@ class MROStockManager:
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
-        # Parse part data - order matches SELECT query above
-        (id, name, part_num, model, equipment, eng_system, unit, qty_stock,
-        unit_price, min_stock, supplier, location, rack, row_num, bin_num,
-        pic1_path, pic2_path, pic1_data, pic2_data, notes, last_updated, created_date, status) = part_data
-    
+        # part_data is already a dictionary from RealDictCursor, access by keys
+        id = part_data['id']
+        name = part_data['name']
+        part_num = part_data['part_number']
+        model = part_data['model_number']
+        equipment = part_data['equipment']
+        eng_system = part_data['engineering_system']
+        unit = part_data['unit_of_measure']
+        qty_stock = part_data['quantity_in_stock']
+        unit_price = part_data['unit_price']
+        min_stock = part_data['minimum_stock']
+        supplier = part_data['supplier']
+        location = part_data['location']
+        rack = part_data['rack']
+        row_num = part_data['row']
+        bin_num = part_data['bin']
+        pic1_path = part_data['picture_1_path']
+        pic2_path = part_data['picture_2_path']
+        pic1_data = part_data['picture_1_data']
+        pic2_data = part_data['picture_2_data']
+        notes = part_data['notes']
+        last_updated = part_data['last_updated']
+        created_date = part_data['created_date']
+        status = part_data['status']
+
         row = 0
     
         # Display part information
