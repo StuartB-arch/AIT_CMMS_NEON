@@ -10532,17 +10532,23 @@ class AITCMMSSystem:
                 raise Exception(f"Equipment update failed - affected {affected_rows} rows instead of 1")
 
             # Update weekly schedule status if exists
-            current_week_start = self.get_week_start(datetime.strptime(completion_date, '%Y-%m-%d'))
+            # Find and update any scheduled PM for this equipment/PM type/technician combination
+            # regardless of which week it was scheduled for (PMs can be completed in different weeks)
             cursor.execute('''
-                UPDATE weekly_pm_schedules SET 
-                status = 'Completed', 
-                completion_date = %s, 
-                labor_hours = %s, 
+                UPDATE weekly_pm_schedules SET
+                status = 'Completed',
+                completion_date = %s,
+                labor_hours = %s,
                 notes = %s
-                WHERE bfm_equipment_no = %s AND pm_type = %s AND assigned_technician = %s
-                AND week_start_date = %s AND status = 'Scheduled'
-            ''', (completion_date, labor_hours + (labor_minutes/60), notes, 
-                bfm_no, pm_type, technician, current_week_start.strftime('%Y-%m-%d')))
+                WHERE id = (
+                    SELECT id FROM weekly_pm_schedules
+                    WHERE bfm_equipment_no = %s AND pm_type = %s AND assigned_technician = %s
+                    AND status = 'Scheduled'
+                    ORDER BY scheduled_date
+                    LIMIT 1
+                )
+            ''', (completion_date, labor_hours + (labor_minutes/60), notes,
+                bfm_no, pm_type, technician))
 
             # DEBUG: Check if the update worked
             updated_rows = cursor.rowcount
@@ -10655,10 +10661,25 @@ class AITCMMSSystem:
 
             # Update equipment status
             cursor.execute('UPDATE equipment SET status = "Missing" WHERE bfm_equipment_no = %s', (bfm_no,))
-        
+
             affected_rows = cursor.rowcount
             if affected_rows != 1:
                 raise Exception(f"Equipment status update failed - affected {affected_rows} rows")
+
+            # Update weekly schedule status if exists - mark as completed with special note
+            cursor.execute('''
+                UPDATE weekly_pm_schedules SET
+                status = 'Completed',
+                completion_date = %s,
+                notes = %s
+                WHERE id = (
+                    SELECT id FROM weekly_pm_schedules
+                    WHERE bfm_equipment_no = %s AND assigned_technician = %s
+                    AND status = 'Scheduled'
+                    ORDER BY scheduled_date
+                    LIMIT 1
+                )
+            ''', (completion_date, f"CANNOT FIND: {notes}", bfm_no, technician))
 
             print(f"CHECK: Cannot Find PM processed: {bfm_no}")
             return True
@@ -10697,6 +10718,22 @@ class AITCMMSSystem:
             affected_rows = cursor.rowcount
             if affected_rows != 1:
                 raise Exception(f"Equipment update failed - affected {affected_rows} rows")
+
+            # Update weekly schedule status if exists - mark as completed with special note
+            cursor.execute('''
+                UPDATE weekly_pm_schedules SET
+                status = 'Completed',
+                completion_date = %s,
+                labor_hours = %s,
+                notes = %s
+                WHERE id = (
+                    SELECT id FROM weekly_pm_schedules
+                    WHERE bfm_equipment_no = %s AND assigned_technician = %s
+                    AND status = 'Scheduled'
+                    ORDER BY scheduled_date
+                    LIMIT 1
+                )
+            ''', (completion_date, total_hours, f"RUN TO FAILURE: {notes}", bfm_no, technician))
 
             print(f"CHECK: Run to Failure PM processed: {bfm_no}")
             return True
