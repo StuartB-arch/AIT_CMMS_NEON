@@ -657,7 +657,7 @@ class MROStockManager:
             return
 
         item = self.mro_tree.item(selected[0])
-        part_number = str(item['values'][0])  # Convert to string to avoid type mismatch
+        part_number = str(item['values'][0]).strip()  # Convert to string and strip whitespace
 
         try:
             # Get full part data - use explicit column list to ensure correct order
@@ -673,10 +673,20 @@ class MROStockManager:
                 part_data = cursor.fetchone()
 
                 if not part_data:
-                    messagebox.showerror("Error", "Part not found")
+                    # Enhanced error message for debugging
+                    messagebox.showerror("Error",
+                        f"Part not found in database.\n\n"
+                        f"Part number from tree: '{part_number}'\n"
+                        f"Length: {len(part_number)} characters\n\n"
+                        f"Try clicking the Refresh button and then edit again.")
                     return
+
+                # Extract all data while cursor is still active
+                part_dict = dict(part_data)
         except Exception as e:
-            messagebox.showerror("Database Error", f"Error loading part data: {str(e)}")
+            messagebox.showerror("Database Error",
+                f"Error loading part data: {str(e)}\n\n"
+                f"Part number: '{part_number}'")
             return
 
         # Create edit dialog (similar to add dialog but pre-filled)
@@ -699,9 +709,7 @@ class MROStockManager:
         canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
 
-        # part_data is already a dictionary from RealDictCursor, use it directly
-        part_dict = part_data
-        
+        # part_dict was already extracted from cursor context above
         # Form fields (similar structure to add_part_dialog)
         fields = {}
         row = 0
@@ -959,7 +967,7 @@ class MROStockManager:
             return
 
         item = self.mro_tree.item(selected[0])
-        part_number = str(item['values'][0])  # Convert to string to avoid type mismatch
+        part_number = str(item['values'][0]).strip()  # Convert to string and strip whitespace
 
         try:
             # Get full part data - use explicit column list to ensure correct order
@@ -975,7 +983,12 @@ class MROStockManager:
                 part_data = cursor.fetchone()
 
                 if not part_data:
-                    messagebox.showerror("Error", f"Part not found: {part_number}")
+                    # Enhanced error message for debugging
+                    messagebox.showerror("Error",
+                        f"Part not found in database.\n\n"
+                        f"Part number from tree: '{part_number}'\n"
+                        f"Length: {len(part_number)} characters\n\n"
+                        f"Try clicking the Refresh button and then try again.")
                     return
 
                 # Extract all data while cursor is still active (RealDictCursor data becomes invalid after context exits)
@@ -1003,7 +1016,9 @@ class MROStockManager:
                 created_date = part_data['created_date']
                 status = part_data['status']
         except Exception as e:
-            messagebox.showerror("Database Error", f"Error loading part details: {str(e)}")
+            messagebox.showerror("Database Error",
+                f"Error loading part details: {str(e)}\n\n"
+                f"Part number: '{part_number}'")
             return
 
         # Create details dialog
