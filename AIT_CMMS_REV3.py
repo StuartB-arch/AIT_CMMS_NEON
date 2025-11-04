@@ -11693,12 +11693,6 @@ class AITCMMSSystem:
                                 f"Assigned to: {assigned_var.get()}")
                 dialog.destroy()
                 self.load_corrective_maintenance()
-                
-                # Prompt for parts request
-                try:
-                    self.prompt_parts_required(cm_number_var.get(), bfm_var.get(), assigned_var.get())
-                except Exception as _e:
-                    pass
         
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to create CM: {str(e)}")
