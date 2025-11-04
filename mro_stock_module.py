@@ -853,10 +853,10 @@ class MROStockManager:
                 with db_pool.get_cursor(commit=False) as cursor:
                     cursor.execute('SELECT picture_1_path, picture_2_path, picture_1_data, picture_2_data FROM mro_inventory WHERE part_number = %s', (part_number,))
                     existing_data = cursor.fetchone()
-                    existing_pic1_path = existing_data[0] if existing_data else None
-                    existing_pic2_path = existing_data[1] if existing_data else None
-                    existing_pic1_data = existing_data[2] if existing_data else None
-                    existing_pic2_data = existing_data[3] if existing_data else None
+                    existing_pic1_path = existing_data['picture_1_path'] if existing_data else None
+                    existing_pic2_path = existing_data['picture_2_path'] if existing_data else None
+                    existing_pic1_data = existing_data['picture_1_data'] if existing_data else None
+                    existing_pic2_data = existing_data['picture_2_data'] if existing_data else None
 
                 # Only read new photo data if a NEW file is selected
                 # Default to existing data and paths
@@ -1879,18 +1879,18 @@ class MROStockManager:
 
             # OPTIMIZED: Process results with reduced column set
             for idx, row in enumerate(cursor.fetchall()):
-                # New column indices for optimized query (only 11 columns)
-                part_number = row[0]
-                name = row[1]
-                model_number = row[2]
-                equipment = row[3]
-                engineering_system = row[4]
-                unit_of_measure = row[5]
-                qty = float(row[6])
-                unit_price = float(row[7])
-                min_stock = float(row[8])
-                location = row[9]
-                status = row[10]
+                # Access row data by column names (RealDictCursor returns dicts)
+                part_number = row['part_number']
+                name = row['name']
+                model_number = row['model_number']
+                equipment = row['equipment']
+                engineering_system = row['engineering_system']
+                unit_of_measure = row['unit_of_measure']
+                qty = float(row['quantity_in_stock'])
+                unit_price = float(row['unit_price'])
+                min_stock = float(row['minimum_stock'])
+                location = row['location']
+                status = row['status']
 
                 # Determine display status
                 display_status = '⚠️ LOW' if qty < min_stock else status
@@ -1931,9 +1931,9 @@ class MROStockManager:
             ''')
 
             result = cursor.fetchone()
-            total = result[0]
-            value = result[1]
-            low_stock = result[2]
+            total = result['total_parts']
+            value = result['total_value']
+            low_stock = result['low_stock_count']
 
             stats_text = (f"Total Parts: {total} | "
                          f"Total Value: ${value:,.2f} | "
