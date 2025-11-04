@@ -975,8 +975,33 @@ class MROStockManager:
                 part_data = cursor.fetchone()
 
                 if not part_data:
-                    messagebox.showerror("Error", "Part not found")
+                    messagebox.showerror("Error", f"Part not found: {part_number}")
                     return
+
+                # Extract all data while cursor is still active (RealDictCursor data becomes invalid after context exits)
+                id = part_data['id']
+                name = part_data['name']
+                part_num = part_data['part_number']
+                model = part_data['model_number']
+                equipment = part_data['equipment']
+                eng_system = part_data['engineering_system']
+                unit = part_data['unit_of_measure']
+                qty_stock = part_data['quantity_in_stock']
+                unit_price = part_data['unit_price']
+                min_stock = part_data['minimum_stock']
+                supplier = part_data['supplier']
+                location = part_data['location']
+                rack = part_data['rack']
+                row_num = part_data['row']
+                bin_num = part_data['bin']
+                pic1_path = part_data['picture_1_path']
+                pic2_path = part_data['picture_2_path']
+                pic1_data = part_data['picture_1_data']
+                pic2_data = part_data['picture_2_data']
+                notes = part_data['notes']
+                last_updated = part_data['last_updated']
+                created_date = part_data['created_date']
+                status = part_data['status']
         except Exception as e:
             messagebox.showerror("Database Error", f"Error loading part details: {str(e)}")
             return
@@ -1013,31 +1038,7 @@ class MROStockManager:
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
-        # part_data is already a dictionary from RealDictCursor, access by keys
-        id = part_data['id']
-        name = part_data['name']
-        part_num = part_data['part_number']
-        model = part_data['model_number']
-        equipment = part_data['equipment']
-        eng_system = part_data['engineering_system']
-        unit = part_data['unit_of_measure']
-        qty_stock = part_data['quantity_in_stock']
-        unit_price = part_data['unit_price']
-        min_stock = part_data['minimum_stock']
-        supplier = part_data['supplier']
-        location = part_data['location']
-        rack = part_data['rack']
-        row_num = part_data['row']
-        bin_num = part_data['bin']
-        pic1_path = part_data['picture_1_path']
-        pic2_path = part_data['picture_2_path']
-        pic1_data = part_data['picture_1_data']
-        pic2_data = part_data['picture_2_data']
-        notes = part_data['notes']
-        last_updated = part_data['last_updated']
-        created_date = part_data['created_date']
-        status = part_data['status']
-
+        # Data already extracted from cursor context above
         row = 0
     
         # Display part information
