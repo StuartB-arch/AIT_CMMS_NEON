@@ -974,11 +974,35 @@ class MROStockManager:
                 ''', (part_number,))
                 part_data = cursor.fetchone()
 
-            if not part_data:
-                messagebox.showerror("Error", "Part not found")
-                return
+                if not part_data:
+                    messagebox.showerror("Error", f"Part not found: {part_number}")
+                    return
+
+                # Extract all data while cursor is still active (RealDictCursor data becomes invalid after context exits)
+                id = part_data['id']
+                name = part_data['name']
+                part_num = part_data['part_number']
+                model = part_data['model_number']
+                equipment = part_data['equipment']
+                eng_system = part_data['engineering_system']
+                unit = part_data['unit_of_measure']
+                qty_stock = part_data['quantity_in_stock']
+                unit_price = part_data['unit_price']
+                min_stock = part_data['minimum_stock']
+                supplier = part_data['supplier']
+                location = part_data['location']
+                rack = part_data['rack']
+                row_num = part_data['row']
+                bin_num = part_data['bin']
+                pic1_path = part_data['picture_1_path']
+                pic2_path = part_data['picture_2_path']
+                pic1_data = part_data['picture_1_data']
+                pic2_data = part_data['picture_2_data']
+                notes = part_data['notes']
+                last_updated = part_data['last_updated']
+                created_date = part_data['created_date']
+                status = part_data['status']
         except Exception as e:
-            self.conn.rollback()
             messagebox.showerror("Database Error", f"Error loading part details: {str(e)}")
             return
 
@@ -1014,31 +1038,7 @@ class MROStockManager:
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
-        # part_data is already a dictionary from RealDictCursor, access by keys
-        id = part_data['id']
-        name = part_data['name']
-        part_num = part_data['part_number']
-        model = part_data['model_number']
-        equipment = part_data['equipment']
-        eng_system = part_data['engineering_system']
-        unit = part_data['unit_of_measure']
-        qty_stock = part_data['quantity_in_stock']
-        unit_price = part_data['unit_price']
-        min_stock = part_data['minimum_stock']
-        supplier = part_data['supplier']
-        location = part_data['location']
-        rack = part_data['rack']
-        row_num = part_data['row']
-        bin_num = part_data['bin']
-        pic1_path = part_data['picture_1_path']
-        pic2_path = part_data['picture_2_path']
-        pic1_data = part_data['picture_1_data']
-        pic2_data = part_data['picture_2_data']
-        notes = part_data['notes']
-        last_updated = part_data['last_updated']
-        created_date = part_data['created_date']
-        status = part_data['status']
-
+        # Data already extracted from cursor context above
         row = 0
     
         # Display part information
@@ -1201,57 +1201,59 @@ class MROStockManager:
                 font=('Arial', 11, 'bold')).pack()
 
         try:
-            # Get CM usage data
-            cursor.execute('''
-                SELECT
-                    cp.cm_number,
-                    cm.description,
-                    cm.bfm_equipment_no,
-                    cp.quantity_used,
-                    cp.total_cost,
-                    cp.recorded_date,
-                    cp.recorded_by,
-                    cm.status,
-                    cp.notes
-                FROM cm_parts_used cp
-                LEFT JOIN corrective_maintenance cm ON cp.cm_number = cm.cm_number
-                WHERE cp.part_number = %s
-                ORDER BY cp.recorded_date DESC
-                LIMIT 50
-            ''', (part_number,))
-
-            cm_history = cursor.fetchall()
-
-            # Statistics frame
-            stats_frame = ttk.LabelFrame(history_frame, text="Usage Statistics", padding=10)
-            stats_frame.pack(fill='x', padx=10, pady=5)
-
-            if cm_history:
-                total_cms = len(cm_history)
-                total_qty_used = sum(row[3] for row in cm_history)
-                total_cost = sum(row[4] or 0 for row in cm_history)
-
-                stats_text = (f"Total CMs: {total_cms} | "
-                            f"Total Quantity Used: {total_qty_used:.2f} {unit} | "
-                            f"Total Cost: ${total_cost:.2f}")
-                ttk.Label(stats_frame, text=stats_text, font=('Arial', 10)).pack()
-
-                # Recent usage (last 30 days)
+            # Get CM usage data - use new cursor context
+            with db_pool.get_cursor(commit=False) as cursor:
                 cursor.execute('''
-                    SELECT SUM(quantity_used)
-                    FROM cm_parts_used
-                    WHERE part_number = %s
-                    AND recorded_date::timestamp >= CURRENT_DATE - INTERVAL '30 days'
+                    SELECT
+                        cp.cm_number,
+                        cm.description,
+                        cm.bfm_equipment_no,
+                        cp.quantity_used,
+                        cp.total_cost,
+                        cp.recorded_date,
+                        cp.recorded_by,
+                        cm.status,
+                        cp.notes
+                    FROM cm_parts_used cp
+                    LEFT JOIN corrective_maintenance cm ON cp.cm_number = cm.cm_number
+                    WHERE cp.part_number = %s
+                    ORDER BY cp.recorded_date DESC
+                    LIMIT 50
                 ''', (part_number,))
 
-                recent_usage = cursor.fetchone()[0] or 0
-                ttk.Label(stats_frame, text=f"Usage Last 30 Days: {recent_usage:.2f} {unit}",
-                        font=('Arial', 9, 'italic')).pack()
-            else:
-                ttk.Label(stats_frame, text="No CM usage history available",
-                        font=('Arial', 10, 'italic')).pack()
+                cm_history = cursor.fetchall()
+
+                # Statistics frame
+                stats_frame = ttk.LabelFrame(history_frame, text="Usage Statistics", padding=10)
+                stats_frame.pack(fill='x', padx=10, pady=5)
+
+                if cm_history:
+                    total_cms = len(cm_history)
+                    # Access dictionary keys instead of indices
+                    total_qty_used = sum(row['quantity_used'] for row in cm_history)
+                    total_cost = sum(row['total_cost'] or 0 for row in cm_history)
+
+                    stats_text = (f"Total CMs: {total_cms} | "
+                                f"Total Quantity Used: {total_qty_used:.2f} {unit} | "
+                                f"Total Cost: ${total_cost:.2f}")
+                    ttk.Label(stats_frame, text=stats_text, font=('Arial', 10)).pack()
+
+                    # Recent usage (last 30 days)
+                    cursor.execute('''
+                        SELECT SUM(quantity_used)
+                        FROM cm_parts_used
+                        WHERE part_number = %s
+                        AND recorded_date::timestamp >= CURRENT_DATE - INTERVAL '30 days'
+                    ''', (part_number,))
+
+                    recent_result = cursor.fetchone()
+                    recent_usage = recent_result['sum'] if recent_result and recent_result['sum'] else 0
+                    ttk.Label(stats_frame, text=f"Usage Last 30 Days: {recent_usage:.2f} {unit}",
+                            font=('Arial', 9, 'italic')).pack()
+                else:
+                    ttk.Label(stats_frame, text="No CM usage history available",
+                            font=('Arial', 10, 'italic')).pack()
         except Exception as e:
-            self.conn.rollback()
             messagebox.showerror("Database Error", f"Error loading CM history: {str(e)}")
             return
     
@@ -1276,16 +1278,17 @@ class MROStockManager:
         history_tree.column('Notes', width=120)
     
         for row in cm_history:
+            # Access dictionary keys instead of indices
             history_tree.insert('', 'end', values=(
-                row[0],  # cm_number
-                row[1][:30] + '...' if row[1] and len(row[1]) > 30 else row[1] or 'N/A',
-                row[2] or 'N/A',
-                f"{row[3]:.2f}",
-                f"${row[4]:.2f}" if row[4] else '$0.00',
-                row[5][:10] if row[5] else '',
-                row[6] or 'N/A',
-                row[7] or 'Unknown',
-                row[8][:20] + '...' if row[8] and len(row[8]) > 20 else row[8] or ''
+                row['cm_number'],
+                row['description'][:30] + '...' if row['description'] and len(row['description']) > 30 else row['description'] or 'N/A',
+                row['bfm_equipment_no'] or 'N/A',
+                f"{row['quantity_used']:.2f}",
+                f"${row['total_cost']:.2f}" if row['total_cost'] else '$0.00',
+                row['recorded_date'][:10] if row['recorded_date'] else '',
+                row['recorded_by'] or 'N/A',
+                row['status'] or 'Unknown',
+                row['notes'][:20] + '...' if row['notes'] and len(row['notes']) > 20 else row['notes'] or ''
             ))
     
         history_tree.pack(side='left', fill='both', expand=True)
@@ -1320,52 +1323,54 @@ class MROStockManager:
         ttk.Label(trans_header, text=f"All Stock Transactions for {part_number}", 
                 font=('Arial', 11, 'bold')).pack()
     
-        # Get all transactions
-        cursor.execute('''
-            SELECT 
-                transaction_date,
-                transaction_type,
-                quantity,
-                technician_name,
-                work_order,
-                notes
-            FROM mro_stock_transactions
-            WHERE part_number = %s
-            ORDER BY transaction_date DESC
-            LIMIT 100
-        ''', (part_number,))
-    
-        transactions = cursor.fetchall()
-    
-        # Transactions treeview
-        trans_tree_frame = ttk.Frame(trans_frame)
-        trans_tree_frame.pack(fill='both', expand=True, padx=10, pady=5)
-        
-        trans_columns = ('Date', 'Type', 'Quantity', 'Technician', 'Work Order', 'Notes')
-        trans_tree = ttk.Treeview(trans_tree_frame, columns=trans_columns, show='headings', height=20)
-    
-        for col in trans_columns:
-            trans_tree.heading(col, text=col)
-    
-        trans_tree.column('Date', width=150)
-        trans_tree.column('Type', width=120)
-        trans_tree.column('Quantity', width=80)
-        trans_tree.column('Technician', width=120)
-        trans_tree.column('Work Order', width=120)
-        trans_tree.column('Notes', width=200)
-    
-        for row in transactions:
-            qty = row[2]
-            qty_display = f"+{qty:.2f}" if qty > 0 else f"{qty:.2f}"
-        
-            trans_tree.insert('', 'end', values=(
-                row[0][:19] if row[0] else '',  # date
-                row[1] or 'N/A',  # type
-                qty_display,  # quantity
-                row[3] or 'N/A',  # technician
-                row[4] or 'N/A',  # work order
-                row[5] or ''  # notes
-            ), tags=('addition',) if qty > 0 else ('deduction',))
+        # Get all transactions - use new cursor context
+        with db_pool.get_cursor(commit=False) as cursor:
+            cursor.execute('''
+                SELECT
+                    transaction_date,
+                    transaction_type,
+                    quantity,
+                    technician_name,
+                    work_order,
+                    notes
+                FROM mro_stock_transactions
+                WHERE part_number = %s
+                ORDER BY transaction_date DESC
+                LIMIT 100
+            ''', (part_number,))
+
+            transactions = cursor.fetchall()
+
+            # Transactions treeview
+            trans_tree_frame = ttk.Frame(trans_frame)
+            trans_tree_frame.pack(fill='both', expand=True, padx=10, pady=5)
+
+            trans_columns = ('Date', 'Type', 'Quantity', 'Technician', 'Work Order', 'Notes')
+            trans_tree = ttk.Treeview(trans_tree_frame, columns=trans_columns, show='headings', height=20)
+
+            for col in trans_columns:
+                trans_tree.heading(col, text=col)
+
+            trans_tree.column('Date', width=150)
+            trans_tree.column('Type', width=120)
+            trans_tree.column('Quantity', width=80)
+            trans_tree.column('Technician', width=120)
+            trans_tree.column('Work Order', width=120)
+            trans_tree.column('Notes', width=200)
+
+            for row in transactions:
+                # Access dictionary keys instead of indices
+                qty = row['quantity']
+                qty_display = f"+{qty:.2f}" if qty > 0 else f"{qty:.2f}"
+
+                trans_tree.insert('', 'end', values=(
+                    row['transaction_date'][:19] if row['transaction_date'] else '',
+                    row['transaction_type'] or 'N/A',
+                    qty_display,
+                    row['technician_name'] or 'N/A',
+                    row['work_order'] or 'N/A',
+                    row['notes'] or ''
+                ), tags=('addition',) if qty > 0 else ('deduction',))
     
         trans_tree.pack(side='left', fill='both', expand=True)
     
