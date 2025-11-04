@@ -7,6 +7,8 @@ from datetime import datetime, timedelta
 from mro_stock_module import MROStockManager
 from cm_parts_integration import CMPartsIntegration
 from database_utils import db_pool, UserManager, AuditLogger, OptimisticConcurrencyControl, TransactionManager
+from kpi_database_migration import migrate_kpi_database
+from kpi_manager import KPIManager
 import shutil
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
@@ -5179,6 +5181,10 @@ class AITCMMSSystem:
         self.parts_integration = CMPartsIntegration(self)
         self.init_pm_templates_database()
 
+        # Initialize KPI system for managers
+        if self.current_user_role == 'Manager':
+            self.init_kpi_system()
+
         # Add logo header
         self.add_logo_to_main_window()
     
@@ -5968,6 +5974,113 @@ class AITCMMSSystem:
         # Load equipment and templates
         self.load_equipment_for_pm_templates()
         self.load_pm_templates()
+
+    def init_kpi_system(self):
+        """Initialize KPI system - run migration and create manager"""
+        try:
+            # Run KPI database migration
+            print("Initializing KPI system...")
+            migrate_kpi_database()
+
+            # Create KPI manager instance
+            self.kpi_manager = KPIManager(db_pool)
+
+            print("KPI system initialized successfully")
+        except Exception as e:
+            print(f"Error initializing KPI system: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def create_kpi_tab(self):
+        """Create KPI Dashboard tab for managers only"""
+        try:
+            # Import PyQt5 modules needed for the KPI UI
+            from PyQt5.QtWidgets import QApplication, QWidget
+            from kpi_ui import KPIDashboard
+            import sys
+
+            # Check if QApplication instance exists
+            app = QApplication.instance()
+            if app is None:
+                app = QApplication(sys.argv)
+
+            # Create a Tkinter frame to host the PyQt widget
+            kpi_frame = ttk.Frame(self.notebook)
+            self.notebook.add(kpi_frame, text="📊 KPI Dashboard")
+
+            # Add instructions label
+            instructions = ttk.Label(
+                kpi_frame,
+                text="KPI Dashboard requires PyQt5. Click the button below to open the KPI Dashboard in a new window.",
+                wraplength=800,
+                justify='center',
+                font=('Arial', 12)
+            )
+            instructions.pack(pady=50)
+
+            # Add button to launch KPI dashboard
+            def launch_kpi_dashboard():
+                try:
+                    # Create KPI dashboard window
+                    kpi_window = KPIDashboard(db_pool, self.user_name)
+                    kpi_window.setWindowTitle("AIT CMMS - KPI Dashboard (Manager)")
+                    kpi_window.resize(1400, 900)
+                    kpi_window.show()
+
+                    # Process events
+                    app.exec_()
+                except Exception as e:
+                    import traceback
+                    messagebox.showerror("Error", f"Failed to open KPI Dashboard:\n{str(e)}\n\n{traceback.format_exc()}")
+
+            launch_btn = ttk.Button(
+                kpi_frame,
+                text="📊 Open KPI Dashboard",
+                command=launch_kpi_dashboard
+            )
+            launch_btn.pack(pady=10)
+
+            # Add feature description
+            features_text = """
+            KPI Dashboard Features:
+
+            ✓ View all 17 KPIs from the 2025 KPI framework
+            ✓ Automatic calculation of KPIs from database
+            ✓ Manual data input for external KPIs
+            ✓ Professional PDF and Excel export
+            ✓ Monthly tracking and trending
+            ✓ Pass/Fail status indicators
+            ✓ Target vs. Actual comparisons
+
+            This dashboard is only visible to managers.
+            """
+
+            features_label = ttk.Label(
+                kpi_frame,
+                text=features_text,
+                font=('Arial', 10),
+                justify='left'
+            )
+            features_label.pack(pady=20)
+
+        except ImportError as e:
+            # PyQt5 not available, show alternative message
+            kpi_frame = ttk.Frame(self.notebook)
+            self.notebook.add(kpi_frame, text="📊 KPI Dashboard")
+
+            error_label = ttk.Label(
+                kpi_frame,
+                text=f"KPI Dashboard requires PyQt5 to be installed.\n\nError: {str(e)}\n\nPlease install PyQt5 using: pip install PyQt5",
+                font=('Arial', 12),
+                foreground='red',
+                wraplength=800,
+                justify='center'
+            )
+            error_label.pack(pady=50)
+
+        except Exception as e:
+            import traceback
+            messagebox.showerror("Error", f"Failed to create KPI tab:\n{str(e)}\n\n{traceback.format_exc()}")
 
     def create_custom_pm_template_dialog(self):
         """Dialog to create custom PM template for specific equipment"""
@@ -7780,6 +7893,7 @@ class AITCMMSSystem:
         self.create_pm_history_search_tab()
         self.create_custom_pm_templates_tab()
         self.mro_manager.create_mro_tab(self.notebook)
+        self.create_kpi_tab()  # KPI Dashboard for managers only
 
     def create_technician_tabs(self):
         """Create limited tabs for technician access"""
