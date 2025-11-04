@@ -10534,6 +10534,8 @@ class AITCMMSSystem:
             # Update weekly schedule status if exists
             # Find and update any scheduled PM for this equipment/PM type/technician combination
             # regardless of which week it was scheduled for (PMs can be completed in different weeks)
+
+            # First, try exact match on all criteria
             cursor.execute('''
                 UPDATE weekly_pm_schedules SET
                 status = 'Completed',
@@ -10542,7 +10544,8 @@ class AITCMMSSystem:
                 notes = %s
                 WHERE id = (
                     SELECT id FROM weekly_pm_schedules
-                    WHERE bfm_equipment_no = %s AND pm_type = %s AND assigned_technician = %s
+                    WHERE bfm_equipment_no = %s AND pm_type = %s
+                    AND TRIM(assigned_technician) = TRIM(%s)
                     AND status = 'Scheduled'
                     ORDER BY scheduled_date
                     LIMIT 1
@@ -10550,8 +10553,31 @@ class AITCMMSSystem:
             ''', (completion_date, labor_hours + (labor_minutes/60), notes,
                 bfm_no, pm_type, technician))
 
-            # DEBUG: Check if the update worked
             updated_rows = cursor.rowcount
+
+            # If no exact match, try fallback: match on equipment and PM type only (any technician)
+            if updated_rows == 0:
+                print(f"NOTICE: No exact tech match for {bfm_no} - {pm_type} by {technician}, trying flexible match...")
+                cursor.execute('''
+                    UPDATE weekly_pm_schedules SET
+                    status = 'Completed',
+                    completion_date = %s,
+                    labor_hours = %s,
+                    notes = %s,
+                    assigned_technician = %s
+                    WHERE id = (
+                        SELECT id FROM weekly_pm_schedules
+                        WHERE bfm_equipment_no = %s AND pm_type = %s
+                        AND status = 'Scheduled'
+                        ORDER BY scheduled_date
+                        LIMIT 1
+                    )
+                ''', (completion_date, labor_hours + (labor_minutes/60), notes, technician,
+                    bfm_no, pm_type))
+                updated_rows = cursor.rowcount
+                if updated_rows > 0:
+                    print(f"SUCCESS: Updated via flexible match (reassigned to {technician})")
+
             print(f"DEBUG: Updated {updated_rows} weekly schedule rows for {bfm_no} - {pm_type} by {technician}")
 
             print(f"CHECK: Normal PM completion processed successfully: {bfm_no} - {pm_type}")
@@ -10667,6 +10693,7 @@ class AITCMMSSystem:
                 raise Exception(f"Equipment status update failed - affected {affected_rows} rows")
 
             # Update weekly schedule status if exists - mark as completed with special note
+            # Try exact technician match first
             cursor.execute('''
                 UPDATE weekly_pm_schedules SET
                 status = 'Completed',
@@ -10674,14 +10701,33 @@ class AITCMMSSystem:
                 notes = %s
                 WHERE id = (
                     SELECT id FROM weekly_pm_schedules
-                    WHERE bfm_equipment_no = %s AND assigned_technician = %s
+                    WHERE bfm_equipment_no = %s AND TRIM(assigned_technician) = TRIM(%s)
                     AND status = 'Scheduled'
                     ORDER BY scheduled_date
                     LIMIT 1
                 )
             ''', (completion_date, f"CANNOT FIND: {notes}", bfm_no, technician))
 
-            print(f"CHECK: Cannot Find PM processed: {bfm_no}")
+            updated_rows = cursor.rowcount
+
+            # Fallback: match on equipment only (any technician, any PM type)
+            if updated_rows == 0:
+                cursor.execute('''
+                    UPDATE weekly_pm_schedules SET
+                    status = 'Completed',
+                    completion_date = %s,
+                    notes = %s,
+                    assigned_technician = %s
+                    WHERE id = (
+                        SELECT id FROM weekly_pm_schedules
+                        WHERE bfm_equipment_no = %s AND status = 'Scheduled'
+                        ORDER BY scheduled_date
+                        LIMIT 1
+                    )
+                ''', (completion_date, f"CANNOT FIND: {notes}", technician, bfm_no))
+                updated_rows = cursor.rowcount
+
+            print(f"CHECK: Cannot Find PM processed: {bfm_no}, updated {updated_rows} schedule rows")
             return True
         
         except Exception as e:
@@ -10720,6 +10766,7 @@ class AITCMMSSystem:
                 raise Exception(f"Equipment update failed - affected {affected_rows} rows")
 
             # Update weekly schedule status if exists - mark as completed with special note
+            # Try exact technician match first
             cursor.execute('''
                 UPDATE weekly_pm_schedules SET
                 status = 'Completed',
@@ -10728,14 +10775,34 @@ class AITCMMSSystem:
                 notes = %s
                 WHERE id = (
                     SELECT id FROM weekly_pm_schedules
-                    WHERE bfm_equipment_no = %s AND assigned_technician = %s
+                    WHERE bfm_equipment_no = %s AND TRIM(assigned_technician) = TRIM(%s)
                     AND status = 'Scheduled'
                     ORDER BY scheduled_date
                     LIMIT 1
                 )
             ''', (completion_date, total_hours, f"RUN TO FAILURE: {notes}", bfm_no, technician))
 
-            print(f"CHECK: Run to Failure PM processed: {bfm_no}")
+            updated_rows = cursor.rowcount
+
+            # Fallback: match on equipment only (any technician, any PM type)
+            if updated_rows == 0:
+                cursor.execute('''
+                    UPDATE weekly_pm_schedules SET
+                    status = 'Completed',
+                    completion_date = %s,
+                    labor_hours = %s,
+                    notes = %s,
+                    assigned_technician = %s
+                    WHERE id = (
+                        SELECT id FROM weekly_pm_schedules
+                        WHERE bfm_equipment_no = %s AND status = 'Scheduled'
+                        ORDER BY scheduled_date
+                        LIMIT 1
+                    )
+                ''', (completion_date, total_hours, f"RUN TO FAILURE: {notes}", technician, bfm_no))
+                updated_rows = cursor.rowcount
+
+            print(f"CHECK: Run to Failure PM processed: {bfm_no}, updated {updated_rows} schedule rows")
             return True
         
         except Exception as e:
