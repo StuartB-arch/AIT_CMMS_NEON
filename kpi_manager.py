@@ -168,21 +168,21 @@ class KPIManager:
 
             # Parse period (format: YYYY-MM)
             year, month = map(int, measurement_period.split('-'))
-            start_date = datetime(year, month, 1)
+            start_date = f"{year}-{month:02d}-01"
             last_day = calendar.monthrange(year, month)[1]
-            end_date = datetime(year, month, last_day, 23, 59, 59)
+            end_date = f"{year}-{month:02d}-{last_day}"
 
             # Count scheduled PMs
             cursor.execute("""
                 SELECT COUNT(*) FROM weekly_pm_schedules
-                WHERE week_start_date >= %s AND week_start_date <= %s
+                WHERE week_start_date::date >= %s::date AND week_start_date::date <= %s::date
             """, (start_date, end_date))
             scheduled = cursor.fetchone()[0]
 
             # Count completed PMs
             cursor.execute("""
                 SELECT COUNT(*) FROM pm_completions
-                WHERE completion_date >= %s AND completion_date <= %s
+                WHERE completion_date::date >= %s::date AND completion_date::date <= %s::date
             """, (start_date, end_date))
             completed = cursor.fetchone()[0]
 
@@ -230,21 +230,21 @@ class KPIManager:
 
             # Parse period
             year, month = map(int, measurement_period.split('-'))
-            start_date = datetime(year, month, 1)
+            start_date = f"{year}-{month:02d}-01"
             last_day = calendar.monthrange(year, month)[1]
-            end_date = datetime(year, month, last_day, 23, 59, 59)
+            end_date = f"{year}-{month:02d}-{last_day}"
 
             # Count opened CMs
             cursor.execute("""
                 SELECT COUNT(*) FROM corrective_maintenance
-                WHERE report_date >= %s AND report_date <= %s
+                WHERE report_date::date >= %s::date AND report_date::date <= %s::date
             """, (start_date, end_date))
             opened = cursor.fetchone()[0]
 
             # Count closed CMs
             cursor.execute("""
                 SELECT COUNT(*) FROM corrective_maintenance
-                WHERE completion_date >= %s AND completion_date <= %s
+                WHERE completion_date::date >= %s::date AND completion_date::date <= %s::date
                 AND completion_date IS NOT NULL
             """, (start_date, end_date))
             closed = cursor.fetchone()[0]
@@ -294,14 +294,14 @@ class KPIManager:
 
             # Parse period
             year, month = map(int, measurement_period.split('-'))
-            start_date = datetime(year, month, 1)
+            start_date = f"{year}-{month:02d}-01"
             last_day = calendar.monthrange(year, month)[1]
-            end_date = datetime(year, month, last_day, 23, 59, 59)
+            end_date = f"{year}-{month:02d}-{last_day}"
 
             # Count WO raised this month
             cursor.execute("""
                 SELECT COUNT(*) FROM corrective_maintenance
-                WHERE report_date >= %s AND report_date <= %s
+                WHERE report_date::date >= %s::date AND report_date::date <= %s::date
             """, (start_date, end_date))
             raised_this_month = cursor.fetchone()[0]
 
@@ -365,12 +365,24 @@ class KPIManager:
             cursor.close()
 
             # Calculate age for each
-            now = datetime.now()
+            now = datetime.now().date()
             over_60_days = 0
             ages = []
 
             for wo_id, report_date in open_wos:
                 if report_date:
+                    # Convert report_date to date object if it's not already
+                    if isinstance(report_date, str):
+                        try:
+                            report_date = datetime.strptime(report_date, '%Y-%m-%d').date()
+                        except:
+                            try:
+                                report_date = datetime.strptime(report_date, '%Y-%m-%d %H:%M:%S').date()
+                            except:
+                                continue
+                    elif isinstance(report_date, datetime):
+                        report_date = report_date.date()
+
                     age = (now - report_date).days
                     ages.append(age)
                     if age > 60:
