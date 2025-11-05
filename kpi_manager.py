@@ -241,7 +241,7 @@ class KPIManager:
             """, (start_date, end_date))
             opened = cursor.fetchone()[0]
 
-            # Count closed CMs
+            # Count closed CMs (closed during October)
             cursor.execute("""
                 SELECT COUNT(*) FROM corrective_maintenance
                 WHERE closed_date::date >= %s::date AND closed_date::date <= %s::date
@@ -249,11 +249,12 @@ class KPIManager:
             """, (start_date, end_date))
             closed = cursor.fetchone()[0]
 
-            # Count currently open (status = 'Open' or closed_date is empty)
+            # Count currently open CMs that were opened in October (still open today)
             cursor.execute("""
                 SELECT COUNT(*) FROM corrective_maintenance
-                WHERE status = 'Open' OR closed_date IS NULL OR closed_date = ''
-            """)
+                WHERE created_date::date >= %s::date AND created_date::date <= %s::date
+                AND (status = 'Open' OR closed_date IS NULL OR closed_date = '')
+            """, (start_date, end_date))
             currently_open = cursor.fetchone()[0]
 
             cursor.close()
@@ -305,11 +306,12 @@ class KPIManager:
             """, (start_date, end_date))
             raised_this_month = cursor.fetchone()[0]
 
-            # Count open WO (status = 'Open' or closed_date is empty)
+            # Count open WO that were raised this month (still open today)
             cursor.execute("""
                 SELECT COUNT(*) FROM corrective_maintenance
-                WHERE status = 'Open' OR closed_date IS NULL OR closed_date = ''
-            """)
+                WHERE created_date::date >= %s::date AND created_date::date <= %s::date
+                AND (status = 'Open' OR closed_date IS NULL OR closed_date = '')
+            """, (start_date, end_date))
             open_wo = cursor.fetchone()[0]
 
             cursor.close()
