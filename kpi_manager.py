@@ -237,22 +237,22 @@ class KPIManager:
             # Count opened CMs
             cursor.execute("""
                 SELECT COUNT(*) FROM corrective_maintenance
-                WHERE report_date::date >= %s::date AND report_date::date <= %s::date
+                WHERE reported_date::date >= %s::date AND reported_date::date <= %s::date
             """, (start_date, end_date))
             opened = cursor.fetchone()[0]
 
             # Count closed CMs
             cursor.execute("""
                 SELECT COUNT(*) FROM corrective_maintenance
-                WHERE completion_date::date >= %s::date AND completion_date::date <= %s::date
-                AND completion_date IS NOT NULL
+                WHERE closed_date::date >= %s::date AND closed_date::date <= %s::date
+                AND closed_date IS NOT NULL
             """, (start_date, end_date))
             closed = cursor.fetchone()[0]
 
             # Count currently open
             cursor.execute("""
                 SELECT COUNT(*) FROM corrective_maintenance
-                WHERE completion_date IS NULL
+                WHERE closed_date IS NULL OR closed_date = ''
             """)
             currently_open = cursor.fetchone()[0]
 
@@ -301,14 +301,14 @@ class KPIManager:
             # Count WO raised this month
             cursor.execute("""
                 SELECT COUNT(*) FROM corrective_maintenance
-                WHERE report_date::date >= %s::date AND report_date::date <= %s::date
+                WHERE reported_date::date >= %s::date AND reported_date::date <= %s::date
             """, (start_date, end_date))
             raised_this_month = cursor.fetchone()[0]
 
             # Count open WO
             cursor.execute("""
                 SELECT COUNT(*) FROM corrective_maintenance
-                WHERE completion_date IS NULL
+                WHERE closed_date IS NULL OR closed_date = ''
             """)
             open_wo = cursor.fetchone()[0]
 
@@ -356,9 +356,9 @@ class KPIManager:
 
             # Get all open WOs
             cursor.execute("""
-                SELECT cm_id, report_date
+                SELECT id, reported_date
                 FROM corrective_maintenance
-                WHERE completion_date IS NULL
+                WHERE closed_date IS NULL OR closed_date = ''
             """)
             open_wos = cursor.fetchall()
 
