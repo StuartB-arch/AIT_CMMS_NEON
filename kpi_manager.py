@@ -544,6 +544,7 @@ class KPIManager:
             # Convert to dict for easier access
             data_dict = {row['data_field']: row['data_value'] or row['data_text'] for row in manual_data}
             print(f"Data fields: {list(data_dict.keys())}")
+            print(f"Data values: {data_dict}")
 
             result = None
             meets_criteria = None
@@ -551,83 +552,83 @@ class KPIManager:
 
             # Calculate based on KPI type
             if kpi_name == 'FR1':
-                accidents = float(data_dict.get('accident_count', 0))
-                hours = float(data_dict.get('hours_worked', 1))
+                accidents = float(data_dict.get('accident_count') or 0)
+                hours = float(data_dict.get('hours_worked') or 1)
                 if hours > 0:
                     result = (accidents / hours) * 1_000_000
                     meets_criteria = result == 0
                     calculated_text = f"{accidents} accidents per {hours:,.0f} hours worked"
 
             elif kpi_name == 'Near Miss':
-                result = float(data_dict.get('near_miss_count', 0))
+                result = float(data_dict.get('near_miss_count') or 0)
                 calculated_text = f"{int(result)} near miss reports"
                 meets_criteria = None  # No specific target
 
             elif kpi_name == 'TTR (Time to Repair) Adherence':
-                p1_within = float(data_dict.get('p1_within_target', 0))
-                p1_total = float(data_dict.get('p1_total', 0))
+                p1_within = float(data_dict.get('p1_within_target') or 0)
+                p1_total = float(data_dict.get('p1_total') or 1)
                 if p1_total > 0:
                     result = (p1_within / p1_total) * 100
                     meets_criteria = result >= 95
                     calculated_text = f"{p1_within}/{p1_total} P1 assets within target"
 
             elif kpi_name == 'MTBF Mean Time Between Failure':
-                p1_hours = float(data_dict.get('p1_operating_hours', 0))
-                p1_failures = float(data_dict.get('p1_failure_count', 1))
+                p1_hours = float(data_dict.get('p1_operating_hours') or 0)
+                p1_failures = float(data_dict.get('p1_failure_count') or 1)
                 if p1_failures > 0:
                     result = p1_hours / p1_failures
                     meets_criteria = result > 80
                     calculated_text = f"{result:.1f} hours between failures (P1 assets)"
 
             elif kpi_name == 'Technical Availability Adherence':
-                meeting = float(data_dict.get('p1_assets_meeting_target', 0))
-                total = float(data_dict.get('p1_total_assets', 1))
+                meeting = float(data_dict.get('p1_assets_meeting_target') or 0)
+                total = float(data_dict.get('p1_total_assets') or 1)
                 if total > 0:
                     result = (meeting / total) * 100
                     meets_criteria = result >= 95
                     calculated_text = f"{meeting}/{total} P1 assets meeting >95% availability"
 
             elif kpi_name == 'MRT (Mean Response Time)':
-                total_time = float(data_dict.get('total_response_time_minutes', 0))
-                wo_count = float(data_dict.get('wo_count', 1))
+                total_time = float(data_dict.get('total_response_time_minutes') or 0)
+                wo_count = float(data_dict.get('wo_count') or 1)
                 if wo_count > 0:
                     result = total_time / wo_count
                     meets_criteria = result <= 15  # P1 target
                     calculated_text = f"{result:.1f} minutes average response time"
 
             elif kpi_name == 'Non Conformances raised':
-                result = float(data_dict.get('nc_count', 0))
+                result = float(data_dict.get('nc_count') or 0)
                 meets_criteria = result == 0
                 calculated_text = f"{int(result)} non-conformances raised"
 
             elif kpi_name == 'Non Conformances closed':
-                closed = float(data_dict.get('nc_closed_on_time', 0))
-                total = float(data_dict.get('nc_total', 1))
+                closed = float(data_dict.get('nc_closed_on_time') or 0)
+                total = float(data_dict.get('nc_total') or 1)
                 if total > 0:
                     result = (closed / total) * 100
                     meets_criteria = result == 100
                     calculated_text = f"{closed}/{total} closed on time"
 
             elif kpi_name == 'Mean Time to Deliver a Quote':
-                total_hours = float(data_dict.get('total_quote_time_hours', 0))
-                quote_count = float(data_dict.get('quote_count', 1))
+                total_hours = float(data_dict.get('total_quote_time_hours') or 0)
+                quote_count = float(data_dict.get('quote_count') or 1)
                 if quote_count > 0:
                     result = total_hours / quote_count
                     meets_criteria = result <= 48
                     calculated_text = f"{result:.1f} hours average delivery time"
 
             elif kpi_name == 'Purchaser satisfaction':
-                result = float(data_dict.get('satisfaction_score', 0))
+                result = float(data_dict.get('satisfaction_score') or 0)
                 meets_criteria = result >= 90
                 calculated_text = f"{result}% satisfaction score"
 
             elif kpi_name == 'Purchaser Monthly process Confirmation':
-                result = float(data_dict.get('confirmation_score', 0))
+                result = float(data_dict.get('confirmation_score') or 0)
                 meets_criteria = result >= 90
                 calculated_text = f"{result}% confirmation score"
 
             elif kpi_name == 'Top Breakdown':
-                calculated_text = data_dict.get('breakdown_analysis', 'N/A')
+                calculated_text = data_dict.get('breakdown_analysis') or 'N/A'
                 result = None
 
             # Save the result
