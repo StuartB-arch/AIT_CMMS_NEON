@@ -418,24 +418,44 @@ class KPIManager:
         results = {}
 
         try:
+            print(f"Calculating PM Adherence for {measurement_period}...")
             results['pm_adherence'] = self.calculate_pm_adherence(measurement_period, username)
+            print("✓ PM Adherence calculated")
         except Exception as e:
-            results['pm_adherence'] = {'error': str(e)}
+            import traceback
+            error_msg = f"{str(e)}\n{traceback.format_exc()}"
+            print(f"✗ PM Adherence error: {error_msg}")
+            results['pm_adherence'] = {'error': error_msg}
 
         try:
+            print(f"Calculating WO Opened vs Closed for {measurement_period}...")
             results['wo_opened_closed'] = self.calculate_wo_opened_vs_closed(measurement_period, username)
+            print("✓ WO Opened vs Closed calculated")
         except Exception as e:
-            results['wo_opened_closed'] = {'error': str(e)}
+            import traceback
+            error_msg = f"{str(e)}\n{traceback.format_exc()}"
+            print(f"✗ WO Opened vs Closed error: {error_msg}")
+            results['wo_opened_closed'] = {'error': error_msg}
 
         try:
+            print(f"Calculating WO Backlog for {measurement_period}...")
             results['wo_backlog'] = self.calculate_wo_backlog(measurement_period, username)
+            print("✓ WO Backlog calculated")
         except Exception as e:
-            results['wo_backlog'] = {'error': str(e)}
+            import traceback
+            error_msg = f"{str(e)}\n{traceback.format_exc()}"
+            print(f"✗ WO Backlog error: {error_msg}")
+            results['wo_backlog'] = {'error': error_msg}
 
         try:
+            print(f"Calculating WO Age Profile for {measurement_period}...")
             results['wo_age_profile'] = self.calculate_wo_age_profile(measurement_period, username)
+            print("✓ WO Age Profile calculated")
         except Exception as e:
-            results['wo_age_profile'] = {'error': str(e)}
+            import traceback
+            error_msg = f"{str(e)}\n{traceback.format_exc()}"
+            print(f"✗ WO Age Profile error: {error_msg}")
+            results['wo_age_profile'] = {'error': error_msg}
 
         return results
 
@@ -511,112 +531,126 @@ class KPIManager:
 
     def calculate_manual_kpi(self, kpi_name, measurement_period, username=None):
         """Calculate KPI from manual input data"""
-        manual_data = self.get_manual_data(kpi_name, measurement_period)
+        try:
+            print(f"Calculating manual KPI: {kpi_name} for {measurement_period}...")
+            manual_data = self.get_manual_data(kpi_name, measurement_period)
 
-        if not manual_data:
-            return {'error': 'No manual data entered for this period'}
+            if not manual_data:
+                print(f"✗ No manual data found for {kpi_name}")
+                return {'error': 'No manual data entered for this period'}
 
-        # Convert to dict for easier access
-        data_dict = {row['data_field']: row['data_value'] or row['data_text'] for row in manual_data}
+            print(f"Found {len(manual_data)} data fields for {kpi_name}")
 
-        result = None
-        meets_criteria = None
-        calculated_text = None
+            # Convert to dict for easier access
+            data_dict = {row['data_field']: row['data_value'] or row['data_text'] for row in manual_data}
+            print(f"Data fields: {list(data_dict.keys())}")
 
-        # Calculate based on KPI type
-        if kpi_name == 'FR1':
-            accidents = float(data_dict.get('accident_count', 0))
-            hours = float(data_dict.get('hours_worked', 1))
-            if hours > 0:
-                result = (accidents / hours) * 1_000_000
-                meets_criteria = result == 0
-                calculated_text = f"{accidents} accidents per {hours:,.0f} hours worked"
-
-        elif kpi_name == 'Near Miss':
-            result = float(data_dict.get('near_miss_count', 0))
-            calculated_text = f"{int(result)} near miss reports"
-            meets_criteria = None  # No specific target
-
-        elif kpi_name == 'TTR (Time to Repair) Adherence':
-            p1_within = float(data_dict.get('p1_within_target', 0))
-            p1_total = float(data_dict.get('p1_total', 0))
-            if p1_total > 0:
-                result = (p1_within / p1_total) * 100
-                meets_criteria = result >= 95
-                calculated_text = f"{p1_within}/{p1_total} P1 assets within target"
-
-        elif kpi_name == 'MTBF Mean Time Between Failure':
-            p1_hours = float(data_dict.get('p1_operating_hours', 0))
-            p1_failures = float(data_dict.get('p1_failure_count', 1))
-            if p1_failures > 0:
-                result = p1_hours / p1_failures
-                meets_criteria = result > 80
-                calculated_text = f"{result:.1f} hours between failures (P1 assets)"
-
-        elif kpi_name == 'Technical Availability Adherence':
-            meeting = float(data_dict.get('p1_assets_meeting_target', 0))
-            total = float(data_dict.get('p1_total_assets', 1))
-            if total > 0:
-                result = (meeting / total) * 100
-                meets_criteria = result >= 95
-                calculated_text = f"{meeting}/{total} P1 assets meeting >95% availability"
-
-        elif kpi_name == 'MRT (Mean Response Time)':
-            total_time = float(data_dict.get('total_response_time_minutes', 0))
-            wo_count = float(data_dict.get('wo_count', 1))
-            if wo_count > 0:
-                result = total_time / wo_count
-                meets_criteria = result <= 15  # P1 target
-                calculated_text = f"{result:.1f} minutes average response time"
-
-        elif kpi_name == 'Non Conformances raised':
-            result = float(data_dict.get('nc_count', 0))
-            meets_criteria = result == 0
-            calculated_text = f"{int(result)} non-conformances raised"
-
-        elif kpi_name == 'Non Conformances closed':
-            closed = float(data_dict.get('nc_closed_on_time', 0))
-            total = float(data_dict.get('nc_total', 1))
-            if total > 0:
-                result = (closed / total) * 100
-                meets_criteria = result == 100
-                calculated_text = f"{closed}/{total} closed on time"
-
-        elif kpi_name == 'Mean Time to Deliver a Quote':
-            total_hours = float(data_dict.get('total_quote_time_hours', 0))
-            quote_count = float(data_dict.get('quote_count', 1))
-            if quote_count > 0:
-                result = total_hours / quote_count
-                meets_criteria = result <= 48
-                calculated_text = f"{result:.1f} hours average delivery time"
-
-        elif kpi_name == 'Purchaser satisfaction':
-            result = float(data_dict.get('satisfaction_score', 0))
-            meets_criteria = result >= 90
-            calculated_text = f"{result}% satisfaction score"
-
-        elif kpi_name == 'Purchaser Monthly process Confirmation':
-            result = float(data_dict.get('confirmation_score', 0))
-            meets_criteria = result >= 90
-            calculated_text = f"{result}% confirmation score"
-
-        elif kpi_name == 'Top Breakdown':
-            calculated_text = data_dict.get('breakdown_analysis', 'N/A')
             result = None
+            meets_criteria = None
+            calculated_text = None
 
-        # Save the result
-        if result is not None or calculated_text:
-            self.save_kpi_result(
-                kpi_name=kpi_name,
-                measurement_period=measurement_period,
-                calculated_value=result,
-                calculated_text=calculated_text,
-                meets_criteria=meets_criteria,
-                calculated_by=username
-            )
+            # Calculate based on KPI type
+            if kpi_name == 'FR1':
+                accidents = float(data_dict.get('accident_count', 0))
+                hours = float(data_dict.get('hours_worked', 1))
+                if hours > 0:
+                    result = (accidents / hours) * 1_000_000
+                    meets_criteria = result == 0
+                    calculated_text = f"{accidents} accidents per {hours:,.0f} hours worked"
 
-        return {
-            'value': result,
-            'text': calculated_text,
-            'meets_criteria': meets_criteria
-        }
+            elif kpi_name == 'Near Miss':
+                result = float(data_dict.get('near_miss_count', 0))
+                calculated_text = f"{int(result)} near miss reports"
+                meets_criteria = None  # No specific target
+
+            elif kpi_name == 'TTR (Time to Repair) Adherence':
+                p1_within = float(data_dict.get('p1_within_target', 0))
+                p1_total = float(data_dict.get('p1_total', 0))
+                if p1_total > 0:
+                    result = (p1_within / p1_total) * 100
+                    meets_criteria = result >= 95
+                    calculated_text = f"{p1_within}/{p1_total} P1 assets within target"
+
+            elif kpi_name == 'MTBF Mean Time Between Failure':
+                p1_hours = float(data_dict.get('p1_operating_hours', 0))
+                p1_failures = float(data_dict.get('p1_failure_count', 1))
+                if p1_failures > 0:
+                    result = p1_hours / p1_failures
+                    meets_criteria = result > 80
+                    calculated_text = f"{result:.1f} hours between failures (P1 assets)"
+
+            elif kpi_name == 'Technical Availability Adherence':
+                meeting = float(data_dict.get('p1_assets_meeting_target', 0))
+                total = float(data_dict.get('p1_total_assets', 1))
+                if total > 0:
+                    result = (meeting / total) * 100
+                    meets_criteria = result >= 95
+                    calculated_text = f"{meeting}/{total} P1 assets meeting >95% availability"
+
+            elif kpi_name == 'MRT (Mean Response Time)':
+                total_time = float(data_dict.get('total_response_time_minutes', 0))
+                wo_count = float(data_dict.get('wo_count', 1))
+                if wo_count > 0:
+                    result = total_time / wo_count
+                    meets_criteria = result <= 15  # P1 target
+                    calculated_text = f"{result:.1f} minutes average response time"
+
+            elif kpi_name == 'Non Conformances raised':
+                result = float(data_dict.get('nc_count', 0))
+                meets_criteria = result == 0
+                calculated_text = f"{int(result)} non-conformances raised"
+
+            elif kpi_name == 'Non Conformances closed':
+                closed = float(data_dict.get('nc_closed_on_time', 0))
+                total = float(data_dict.get('nc_total', 1))
+                if total > 0:
+                    result = (closed / total) * 100
+                    meets_criteria = result == 100
+                    calculated_text = f"{closed}/{total} closed on time"
+
+            elif kpi_name == 'Mean Time to Deliver a Quote':
+                total_hours = float(data_dict.get('total_quote_time_hours', 0))
+                quote_count = float(data_dict.get('quote_count', 1))
+                if quote_count > 0:
+                    result = total_hours / quote_count
+                    meets_criteria = result <= 48
+                    calculated_text = f"{result:.1f} hours average delivery time"
+
+            elif kpi_name == 'Purchaser satisfaction':
+                result = float(data_dict.get('satisfaction_score', 0))
+                meets_criteria = result >= 90
+                calculated_text = f"{result}% satisfaction score"
+
+            elif kpi_name == 'Purchaser Monthly process Confirmation':
+                result = float(data_dict.get('confirmation_score', 0))
+                meets_criteria = result >= 90
+                calculated_text = f"{result}% confirmation score"
+
+            elif kpi_name == 'Top Breakdown':
+                calculated_text = data_dict.get('breakdown_analysis', 'N/A')
+                result = None
+
+            # Save the result
+            if result is not None or calculated_text:
+                print(f"Saving KPI result: {kpi_name} = {result or calculated_text}")
+                self.save_kpi_result(
+                    kpi_name=kpi_name,
+                    measurement_period=measurement_period,
+                    calculated_value=result,
+                    calculated_text=calculated_text,
+                    meets_criteria=meets_criteria,
+                    calculated_by=username
+                )
+                print(f"✓ {kpi_name} calculated successfully")
+
+            return {
+                'value': result,
+                'text': calculated_text,
+                'meets_criteria': meets_criteria
+            }
+
+        except Exception as e:
+            import traceback
+            error_msg = f"{str(e)}\n{traceback.format_exc()}"
+            print(f"✗ Error calculating {kpi_name}: {error_msg}")
+            return {'error': error_msg}
