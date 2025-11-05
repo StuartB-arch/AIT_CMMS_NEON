@@ -234,10 +234,10 @@ class KPIManager:
             last_day = calendar.monthrange(year, month)[1]
             end_date = f"{year}-{month:02d}-{last_day}"
 
-            # Count opened CMs
+            # Count opened CMs (using created_date which is actually populated)
             cursor.execute("""
                 SELECT COUNT(*) FROM corrective_maintenance
-                WHERE reported_date::date >= %s::date AND reported_date::date <= %s::date
+                WHERE created_date::date >= %s::date AND created_date::date <= %s::date
             """, (start_date, end_date))
             opened = cursor.fetchone()[0]
 
@@ -245,14 +245,14 @@ class KPIManager:
             cursor.execute("""
                 SELECT COUNT(*) FROM corrective_maintenance
                 WHERE closed_date::date >= %s::date AND closed_date::date <= %s::date
-                AND closed_date IS NOT NULL
+                AND closed_date IS NOT NULL AND closed_date != ''
             """, (start_date, end_date))
             closed = cursor.fetchone()[0]
 
-            # Count currently open
+            # Count currently open (status = 'Open' or closed_date is empty)
             cursor.execute("""
                 SELECT COUNT(*) FROM corrective_maintenance
-                WHERE closed_date IS NULL OR closed_date = ''
+                WHERE status = 'Open' OR closed_date IS NULL OR closed_date = ''
             """)
             currently_open = cursor.fetchone()[0]
 
@@ -298,17 +298,17 @@ class KPIManager:
             last_day = calendar.monthrange(year, month)[1]
             end_date = f"{year}-{month:02d}-{last_day}"
 
-            # Count WO raised this month
+            # Count WO raised this month (using created_date)
             cursor.execute("""
                 SELECT COUNT(*) FROM corrective_maintenance
-                WHERE reported_date::date >= %s::date AND reported_date::date <= %s::date
+                WHERE created_date::date >= %s::date AND created_date::date <= %s::date
             """, (start_date, end_date))
             raised_this_month = cursor.fetchone()[0]
 
-            # Count open WO
+            # Count open WO (status = 'Open' or closed_date is empty)
             cursor.execute("""
                 SELECT COUNT(*) FROM corrective_maintenance
-                WHERE closed_date IS NULL OR closed_date = ''
+                WHERE status = 'Open' OR closed_date IS NULL OR closed_date = ''
             """)
             open_wo = cursor.fetchone()[0]
 
@@ -354,11 +354,11 @@ class KPIManager:
         try:
             cursor = conn.cursor()
 
-            # Get all open WOs
+            # Get all open WOs (using created_date)
             cursor.execute("""
-                SELECT id, reported_date
+                SELECT id, created_date
                 FROM corrective_maintenance
-                WHERE closed_date IS NULL OR closed_date = ''
+                WHERE status = 'Open' OR closed_date IS NULL OR closed_date = ''
             """)
             open_wos = cursor.fetchall()
 
@@ -369,21 +369,21 @@ class KPIManager:
             over_60_days = 0
             ages = []
 
-            for wo_id, report_date in open_wos:
-                if report_date:
-                    # Convert report_date to date object if it's not already
-                    if isinstance(report_date, str):
+            for wo_id, created_date in open_wos:
+                if created_date:
+                    # Convert created_date to date object if it's not already
+                    if isinstance(created_date, str):
                         try:
-                            report_date = datetime.strptime(report_date, '%Y-%m-%d').date()
+                            created_date = datetime.strptime(created_date, '%Y-%m-%d').date()
                         except:
                             try:
-                                report_date = datetime.strptime(report_date, '%Y-%m-%d %H:%M:%S').date()
+                                created_date = datetime.strptime(created_date, '%Y-%m-%d %H:%M:%S').date()
                             except:
                                 continue
-                    elif isinstance(report_date, datetime):
-                        report_date = report_date.date()
+                    elif isinstance(created_date, datetime):
+                        created_date = created_date.date()
 
-                    age = (now - report_date).days
+                    age = (now - created_date).days
                     ages.append(age)
                     if age > 60:
                         over_60_days += 1
