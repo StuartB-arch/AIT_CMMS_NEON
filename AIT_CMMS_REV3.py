@@ -5152,12 +5152,9 @@ class AITCMMSSystem:
         # ===== ROLE-BASED ACCESS CONTROL =====
         self.current_user_role = None  # Will be set by login
         self.user_name = None
-    
-        # Team members as specified - MUST be defined before login dialog
-        self.technicians = [
-            "Mark Michaels", "Jerone Bosarge", "Jon Hymel", "Nick Whisenant",
-            "James Dunnam", "Wayne Dunnam", "Nate Williams", "Rey Marikit", "Ronald Houghs",
-        ]
+
+        # Technicians list - will be loaded from database after initialization
+        self.technicians = []
 
         # ===== Initialize Database Connection Pool BEFORE Login =====
         # This must happen before login dialog because login needs database access
@@ -5175,6 +5172,9 @@ class AITCMMSSystem:
         if not self.show_login_dialog():
             self.root.destroy()
             return
+
+        # Load technicians list from database (after successful login)
+        self.load_technicians_from_database()
 
         # ===== Initialize PostgreSQL Database =====
         self.init_database()
@@ -5780,9 +5780,39 @@ class AITCMMSSystem:
 
         return login_successful
 
-    
+    def load_technicians_from_database(self):
+        """Load list of active technicians from the database"""
+        try:
+            with db_pool.get_cursor() as cursor:
+                cursor.execute("""
+                    SELECT full_name
+                    FROM users
+                    WHERE is_active = TRUE
+                    ORDER BY full_name
+                """)
 
-    
+                rows = cursor.fetchall()
+                self.technicians = [row['full_name'] for row in rows]
+
+                print(f"Loaded {len(self.technicians)} technicians from database: {self.technicians}")
+
+                # If no technicians found, use a fallback list
+                if not self.technicians:
+                    print("WARNING: No technicians found in database, using fallback list")
+                    self.technicians = [
+                        "Mark Michaels", "Jerone Bosarge", "Jon Hymel", "Nick Whisenant",
+                        "James Dunnam", "Wayne Dunnam", "Nate Williams", "Rey Marikit", "Ronald Houghs",
+                    ]
+
+        except Exception as e:
+            print(f"Error loading technicians from database: {e}")
+            # Use fallback list on error
+            self.technicians = [
+                "Mark Michaels", "Jerone Bosarge", "Jon Hymel", "Nick Whisenant",
+                "James Dunnam", "Wayne Dunnam", "Nate Williams", "Rey Marikit", "Ronald Houghs",
+            ]
+
+
     def get_week_start(self, date):
         """Get the start of the week (Monday) for a given date"""
         days_since_monday = date.weekday()
@@ -8031,6 +8061,11 @@ class AITCMMSSystem:
         try:
             dialog = UserManagementDialog(self.root, self.user_name)
             dialog.show()
+
+            # Reload technicians list after dialog closes (to pick up any new users)
+            self.load_technicians_from_database()
+            print("Technicians list refreshed after user management")
+
         except Exception as e:
             messagebox.showerror("Error", f"Failed to open user management: {e}")
 

@@ -376,18 +376,14 @@ class UserManagementDialog:
 
         try:
             with db_pool.get_cursor() as cursor:
-                # First, end any active sessions for this user
-                cursor.execute("""
-                    UPDATE user_sessions
-                    SET logout_time = CURRENT_TIMESTAMP, is_active = FALSE
-                    WHERE user_id = %s AND is_active = TRUE
-                """, (user_id,))
-
                 # Log the deletion before deleting the user
                 AuditLogger.log(cursor, self.current_user, 'DELETE', 'users', str(user_id),
                             notes=f"Deleted user: {username} ({role})")
 
-                # Delete the user
+                # Delete all sessions for this user first (to avoid foreign key constraint)
+                cursor.execute("DELETE FROM user_sessions WHERE user_id = %s", (user_id,))
+
+                # Now delete the user
                 cursor.execute("DELETE FROM users WHERE id = %s", (user_id,))
 
                 # Check if deletion was successful
