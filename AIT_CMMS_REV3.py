@@ -5781,13 +5781,13 @@ class AITCMMSSystem:
         return login_successful
 
     def load_technicians_from_database(self):
-        """Load list of active technicians from the database"""
+        """Load list of active technicians from the database (Technician role only)"""
         try:
             with db_pool.get_cursor() as cursor:
                 cursor.execute("""
                     SELECT full_name
                     FROM users
-                    WHERE is_active = TRUE
+                    WHERE is_active = TRUE AND role = 'Technician'
                     ORDER BY full_name
                 """)
 
