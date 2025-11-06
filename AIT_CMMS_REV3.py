@@ -9,6 +9,7 @@ from cm_parts_integration import CMPartsIntegration
 from database_utils import db_pool, UserManager, AuditLogger, OptimisticConcurrencyControl, TransactionManager
 from kpi_database_migration import migrate_kpi_database
 from kpi_manager import KPIManager
+from user_management_ui import UserManagementDialog
 import shutil
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
@@ -7876,9 +7877,13 @@ class AITCMMSSystem:
                                     relief='sunken')
         self.status_bar.pack(side='left', fill='x', expand=True)
 
-        # Role switching button (only for development/testing)
+        # Manager-only buttons
         if self.current_user_role == 'Manager':
-            ttk.Button(status_frame, text="Switch to Technician View", 
+            # User Management button
+            ttk.Button(status_frame, text="Manage Users",
+                    command=self.open_user_management).pack(side='right', padx=5)
+            # Role switching button (only for development/testing)
+            ttk.Button(status_frame, text="Switch to Technician View",
                     command=self.switch_to_technician_view).pack(side='right', padx=5)
 
     def create_all_manager_tabs(self):
@@ -8006,6 +8011,18 @@ class AITCMMSSystem:
         
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load your CMs: {str(e)}")
+
+    def open_user_management(self):
+        """Open user management dialog (Manager only)"""
+        if self.current_user_role != 'Manager':
+            messagebox.showerror("Access Denied", "Only managers can access user management.")
+            return
+
+        try:
+            dialog = UserManagementDialog(self.root, self.user_name)
+            dialog.show()
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to open user management: {e}")
 
     def switch_to_technician_view(self):
         """Switch to technician view for testing (Manager only)"""
