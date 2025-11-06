@@ -5812,6 +5812,10 @@ class AITCMMSSystem:
                 "James Dunnam", "Wayne Dunnam", "Nate Williams", "Rey Marikit", "Ronald Houghs",
             ]
 
+        # Update the exclusion list if the UI has been created
+        if hasattr(self, 'excluded_technicians_listbox'):
+            self.populate_technician_exclusion_list()
+
 
     def get_week_start(self, date):
         """Get the start of the week (Monday) for a given date"""
@@ -8418,13 +8422,40 @@ class AITCMMSSystem:
         # Populate with available weeks
         self.populate_week_selector()
         
-        ttk.Button(controls_frame, text="Generate Weekly Schedule", 
+        ttk.Button(controls_frame, text="Generate Weekly Schedule",
                   command=self.generate_weekly_assignments).grid(row=0, column=2, padx=5)
-        ttk.Button(controls_frame, text="Print PM Forms", 
+        ttk.Button(controls_frame, text="Print PM Forms",
                   command=self.print_weekly_pm_forms).grid(row=0, column=3, padx=5)
         ttk.Button(controls_frame, text="Export Schedule",
                   command=self.export_weekly_schedule).grid(row=0, column=4, padx=5)
-        
+
+        # Technician Exclusion Controls
+        exclusion_frame = ttk.LabelFrame(self.pm_schedule_frame, text="Exclude Technicians from This Week's Schedule", padding=10)
+        exclusion_frame.pack(fill='x', padx=10, pady=5)
+
+        ttk.Label(exclusion_frame, text="Select technicians to exclude (e.g., vacation, out sick):").pack(anchor='w', pady=5)
+
+        # Create a frame for the listbox and scrollbar
+        listbox_frame = ttk.Frame(exclusion_frame)
+        listbox_frame.pack(fill='both', expand=False, pady=5)
+
+        # Create listbox with multiple selection
+        self.excluded_technicians_listbox = tk.Listbox(listbox_frame, selectmode='multiple', height=6, exportselection=False)
+        self.excluded_technicians_listbox.pack(side='left', fill='both', expand=True)
+
+        # Add scrollbar
+        scrollbar = ttk.Scrollbar(listbox_frame, orient='vertical', command=self.excluded_technicians_listbox.yview)
+        scrollbar.pack(side='right', fill='y')
+        self.excluded_technicians_listbox.config(yscrollcommand=scrollbar.set)
+
+        # Populate the listbox with technicians
+        self.populate_technician_exclusion_list()
+
+        # Add helper buttons
+        button_frame = ttk.Frame(exclusion_frame)
+        button_frame.pack(fill='x', pady=5)
+        ttk.Button(button_frame, text="Clear All Exclusions", command=self.clear_all_exclusions).pack(side='left', padx=5)
+
         # Schedule display
         schedule_frame = ttk.LabelFrame(self.pm_schedule_frame, text="Weekly PM Schedule", padding=10)
         schedule_frame.pack(fill='both', expand=True, padx=10, pady=5)
@@ -15286,8 +15317,33 @@ class AITCMMSSystem:
                 )
                 return
 
-            # Create the new PM scheduling service
-            pm_service = PMSchedulingService(self.conn, self.technicians, self.root)
+            # Get excluded technicians
+            excluded_techs = self.get_excluded_technicians()
+
+            # Filter technicians to exclude selected ones
+            available_technicians = [tech for tech in self.technicians if tech not in excluded_techs]
+
+            # Validate that at least one technician is available
+            if len(available_technicians) == 0:
+                messagebox.showerror(
+                    "Configuration Error",
+                    "All technicians are excluded from scheduling.\n\n"
+                    "Please ensure at least one technician is available for PM assignment."
+                )
+                return
+
+            # Show info if technicians are excluded
+            if excluded_techs:
+                excluded_names = ", ".join(excluded_techs)
+                messagebox.showinfo(
+                    "Technician Exclusions",
+                    f"The following technician(s) will be excluded from this week's schedule:\n\n"
+                    f"{excluded_names}\n\n"
+                    f"PMs will be distributed among the remaining {len(available_technicians)} technician(s)."
+                )
+
+            # Create the new PM scheduling service with filtered technicians
+            pm_service = PMSchedulingService(self.conn, available_technicians, self.root)
 
             # Get the week start date
             week_start = self.week_start_var.get()
@@ -15321,9 +15377,31 @@ class AITCMMSSystem:
             messagebox.showerror("NEW SYSTEM Error", f"Failed to generate assignments: {str(e)}")
             import traceback
             traceback.print_exc()
-    
 
-    
+    def populate_technician_exclusion_list(self):
+        """Populate the exclusion listbox with all technicians"""
+        if hasattr(self, 'excluded_technicians_listbox'):
+            self.excluded_technicians_listbox.delete(0, tk.END)
+            for tech in self.technicians:
+                self.excluded_technicians_listbox.insert(tk.END, tech)
+
+    def clear_all_exclusions(self):
+        """Clear all technician exclusions"""
+        if hasattr(self, 'excluded_technicians_listbox'):
+            self.excluded_technicians_listbox.selection_clear(0, tk.END)
+
+    def get_excluded_technicians(self):
+        """Get list of excluded technicians based on listbox selection"""
+        if not hasattr(self, 'excluded_technicians_listbox'):
+            return []
+
+        excluded = []
+        selected_indices = self.excluded_technicians_listbox.curselection()
+        for idx in selected_indices:
+            excluded.append(self.excluded_technicians_listbox.get(idx))
+        return excluded
+
+
     def refresh_technician_schedules(self):
         """Refresh all technician schedule displays"""
         week_start = self.week_start_var.get()
