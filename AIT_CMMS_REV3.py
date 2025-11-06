@@ -5152,12 +5152,9 @@ class AITCMMSSystem:
         # ===== ROLE-BASED ACCESS CONTROL =====
         self.current_user_role = None  # Will be set by login
         self.user_name = None
-    
-        # Team members as specified - MUST be defined before login dialog
-        self.technicians = [
-            "Mark Michaels", "Jerone Bosarge", "Jon Hymel", "Nick Whisenant",
-            "James Dunnam", "Wayne Dunnam", "Nate Williams", "Rey Marikit", "Ronald Houghs",
-        ]
+
+        # Technicians list - will be loaded from database after initialization
+        self.technicians = []
 
         # ===== Initialize Database Connection Pool BEFORE Login =====
         # This must happen before login dialog because login needs database access
@@ -5175,6 +5172,9 @@ class AITCMMSSystem:
         if not self.show_login_dialog():
             self.root.destroy()
             return
+
+        # Load technicians list from database (after successful login)
+        self.load_technicians_from_database()
 
         # ===== Initialize PostgreSQL Database =====
         self.init_database()
@@ -5780,9 +5780,39 @@ class AITCMMSSystem:
 
         return login_successful
 
-    
+    def load_technicians_from_database(self):
+        """Load list of active technicians from the database (Technician role only)"""
+        try:
+            with db_pool.get_cursor() as cursor:
+                cursor.execute("""
+                    SELECT full_name
+                    FROM users
+                    WHERE is_active = TRUE AND role = 'Technician'
+                    ORDER BY full_name
+                """)
 
-    
+                rows = cursor.fetchall()
+                self.technicians = [row['full_name'] for row in rows]
+
+                print(f"Loaded {len(self.technicians)} technicians from database: {self.technicians}")
+
+                # If no technicians found, use a fallback list
+                if not self.technicians:
+                    print("WARNING: No technicians found in database, using fallback list")
+                    self.technicians = [
+                        "Mark Michaels", "Jerone Bosarge", "Jon Hymel", "Nick Whisenant",
+                        "James Dunnam", "Wayne Dunnam", "Nate Williams", "Rey Marikit", "Ronald Houghs",
+                    ]
+
+        except Exception as e:
+            print(f"Error loading technicians from database: {e}")
+            # Use fallback list on error
+            self.technicians = [
+                "Mark Michaels", "Jerone Bosarge", "Jon Hymel", "Nick Whisenant",
+                "James Dunnam", "Wayne Dunnam", "Nate Williams", "Rey Marikit", "Ronald Houghs",
+            ]
+
+
     def get_week_start(self, date):
         """Get the start of the week (Monday) for a given date"""
         days_since_monday = date.weekday()
@@ -7856,11 +7886,30 @@ class AITCMMSSystem:
         # Create style
         style = ttk.Style()
         style.theme_use('clam')
-    
+
+        # Toolbar frame at the top (for Manager actions)
+        if self.current_user_role == 'Manager':
+            toolbar_frame = ttk.Frame(self.root, relief='raised', borderwidth=1)
+            toolbar_frame.pack(side='top', fill='x', padx=5, pady=5)
+
+            # Left side - Title
+            ttk.Label(toolbar_frame, text="Manager Tools:",
+                     font=('Arial', 10, 'bold')).pack(side='left', padx=10)
+
+            # Right side - Action buttons
+            ttk.Button(toolbar_frame, text="👥 Manage Users",
+                      command=self.open_user_management).pack(side='left', padx=5)
+
+            ttk.Button(toolbar_frame, text="Switch to Technician View",
+                      command=self.switch_to_technician_view).pack(side='left', padx=5)
+
+            # Separator
+            ttk.Separator(self.root, orient='horizontal').pack(fill='x', padx=5)
+
         # Main notebook for tabs
         self.notebook = ttk.Notebook(self.root)
         self.notebook.pack(fill='both', expand=True, padx=10, pady=10)
-    
+
         # Create tabs based on role
         if self.current_user_role == 'Manager':
             # Manager gets all tabs
@@ -7868,23 +7917,14 @@ class AITCMMSSystem:
         else:
             # Technicians only get CM tab
             self.create_technician_tabs()
-    
+
         # Status bar with user info
         status_frame = ttk.Frame(self.root)
         status_frame.pack(side='bottom', fill='x')
-    
+
         self.status_bar = ttk.Label(status_frame, text=f"AIT CMMS Ready - Logged in as: {self.user_name} ({self.current_user_role})",
                                     relief='sunken')
         self.status_bar.pack(side='left', fill='x', expand=True)
-
-        # Manager-only buttons
-        if self.current_user_role == 'Manager':
-            # User Management button
-            ttk.Button(status_frame, text="Manage Users",
-                    command=self.open_user_management).pack(side='right', padx=5)
-            # Role switching button (only for development/testing)
-            ttk.Button(status_frame, text="Switch to Technician View",
-                    command=self.switch_to_technician_view).pack(side='right', padx=5)
 
     def create_all_manager_tabs(self):
         """Create all tabs for manager access"""
@@ -8021,6 +8061,11 @@ class AITCMMSSystem:
         try:
             dialog = UserManagementDialog(self.root, self.user_name)
             dialog.show()
+
+            # Reload technicians list after dialog closes (to pick up any new users)
+            self.load_technicians_from_database()
+            print("Technicians list refreshed after user management")
+
         except Exception as e:
             messagebox.showerror("Error", f"Failed to open user management: {e}")
 

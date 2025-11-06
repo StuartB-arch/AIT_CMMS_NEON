@@ -98,13 +98,13 @@ class UserManagementDialog:
 
                 for row in cursor.fetchall():
                     values = (
-                        row[0],  # id
-                        row[1],  # username
-                        row[2],  # full_name
-                        row[3],  # role
-                        'Yes' if row[4] else 'No',  # is_active
-                        str(row[5]) if row[5] else 'Never',  # last_login
-                        str(row[6])  # created_date
+                        row['id'],
+                        row['username'],
+                        row['full_name'],
+                        row['role'],
+                        'Yes' if row['is_active'] else 'No',
+                        str(row['last_login']) if row['last_login'] else 'Never',
+                        str(row['created_date'])
                     )
                     self.tree.insert('', 'end', values=values)
 
@@ -254,28 +254,28 @@ class UserManagementDialog:
 
         # Username (read-only)
         ttk.Label(form_frame, text="Username:").grid(row=0, column=0, sticky='w', pady=5)
-        ttk.Label(form_frame, text=user[0], font=('Arial', 10, 'bold')).grid(row=0, column=1, sticky='w', pady=5)
+        ttk.Label(form_frame, text=user['username'], font=('Arial', 10, 'bold')).grid(row=0, column=1, sticky='w', pady=5)
 
         # Full Name
         ttk.Label(form_frame, text="Full Name:").grid(row=1, column=0, sticky='w', pady=5)
-        fullname_var = tk.StringVar(value=user[1])
+        fullname_var = tk.StringVar(value=user['full_name'])
         ttk.Entry(form_frame, textvariable=fullname_var, width=30).grid(row=1, column=1, pady=5)
 
         # Email
         ttk.Label(form_frame, text="Email:").grid(row=2, column=0, sticky='w', pady=5)
-        email_var = tk.StringVar(value=user[2] or '')
+        email_var = tk.StringVar(value=user['email'] or '')
         ttk.Entry(form_frame, textvariable=email_var, width=30).grid(row=2, column=1, pady=5)
 
         # Role
         ttk.Label(form_frame, text="Role:").grid(row=3, column=0, sticky='w', pady=5)
-        role_var = tk.StringVar(value=user[3])
+        role_var = tk.StringVar(value=user['role'])
         ttk.Combobox(form_frame, textvariable=role_var,
                     values=['Manager', 'Technician'],
                     state='readonly', width=28).grid(row=3, column=1, pady=5)
 
         # Active
         ttk.Label(form_frame, text="Active:").grid(row=4, column=0, sticky='w', pady=5)
-        active_var = tk.BooleanVar(value=user[4])
+        active_var = tk.BooleanVar(value=user['is_active'])
         ttk.Checkbutton(form_frame, variable=active_var).grid(row=4, column=1, sticky='w', pady=5)
 
         # Reset Password
@@ -287,7 +287,7 @@ class UserManagementDialog:
         # Notes
         ttk.Label(form_frame, text="Notes:").grid(row=7, column=0, sticky='nw', pady=5)
         notes_text = tk.Text(form_frame, width=30, height=3)
-        notes_text.insert('1.0', user[5] or '')
+        notes_text.insert('1.0', user['notes'] or '')
         notes_text.grid(row=7, column=1, pady=5)
 
         def save_changes():
@@ -326,7 +326,7 @@ class UserManagementDialog:
 
                     # Log the action
                     AuditLogger.log(cursor, self.current_user, 'UPDATE', 'users', str(user_id),
-                                notes=f"Updated user: {user[0]}")
+                                notes=f"Updated user: {user['username']}")
 
                 messagebox.showinfo("Success", "User updated successfully")
                 dialog.destroy()
@@ -376,18 +376,14 @@ class UserManagementDialog:
 
         try:
             with db_pool.get_cursor() as cursor:
-                # First, end any active sessions for this user
-                cursor.execute("""
-                    UPDATE user_sessions
-                    SET logout_time = CURRENT_TIMESTAMP, is_active = FALSE
-                    WHERE user_id = %s AND is_active = TRUE
-                """, (user_id,))
-
                 # Log the deletion before deleting the user
                 AuditLogger.log(cursor, self.current_user, 'DELETE', 'users', str(user_id),
                             notes=f"Deleted user: {username} ({role})")
 
-                # Delete the user
+                # Delete all sessions for this user first (to avoid foreign key constraint)
+                cursor.execute("DELETE FROM user_sessions WHERE user_id = %s", (user_id,))
+
+                # Now delete the user
                 cursor.execute("DELETE FROM users WHERE id = %s", (user_id,))
 
                 # Check if deletion was successful
@@ -436,12 +432,12 @@ class UserManagementDialog:
 
                 for session in sessions:
                     tree.insert('', 'end', values=(
-                        session[0],  # session id
-                        session[2],  # username
-                        session[3],  # full_name
-                        session[4],  # role
-                        str(session[5]),  # login_time
-                        str(session[6])  # last_activity
+                        session['id'],
+                        session['username'],
+                        session['full_name'],
+                        session['role'],
+                        str(session['login_time']),
+                        str(session['last_activity'])
                     ))
 
         except Exception as e:
