@@ -36,6 +36,8 @@ class UserManagementDialog:
                 command=self.add_user).pack(side='right', padx=5)
         ttk.Button(header_frame, text="Edit User",
                 command=self.edit_user).pack(side='right', padx=5)
+        ttk.Button(header_frame, text="Delete User",
+                command=self.delete_user).pack(side='right', padx=5)
         ttk.Button(header_frame, text="View Sessions",
                 command=self.view_sessions).pack(side='right', padx=5)
 
@@ -339,6 +341,65 @@ class UserManagementDialog:
 
         ttk.Button(button_frame, text="Save", command=save_changes).pack(side='left', padx=5)
         ttk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side='right', padx=5)
+
+    def delete_user(self):
+        """Delete selected user"""
+        selected = self.tree.selection()
+        if not selected:
+            messagebox.showwarning("Warning", "Please select a user to delete")
+            return
+
+        user_id = self.tree.item(selected[0])['values'][0]
+        username = self.tree.item(selected[0])['values'][1]
+        role = self.tree.item(selected[0])['values'][3]
+
+        # Confirm deletion
+        result = messagebox.askyesno(
+            "Confirm Deletion",
+            f"Are you sure you want to delete user '{username}' ({role})?\n\n"
+            "This action cannot be undone and will:\n"
+            "- Remove the user from the system\n"
+            "- End any active sessions\n"
+            "- Preserve audit trail entries\n\n"
+            "Note: For safety, consider deactivating the user instead "
+            "(via Edit User).",
+            icon='warning'
+        )
+
+        if not result:
+            return
+
+        # Prevent self-deletion
+        if username == self.current_user:
+            messagebox.showerror("Error", "You cannot delete your own account")
+            return
+
+        try:
+            with db_pool.get_cursor() as cursor:
+                # First, end any active sessions for this user
+                cursor.execute("""
+                    UPDATE user_sessions
+                    SET logout_time = CURRENT_TIMESTAMP, is_active = FALSE
+                    WHERE user_id = %s AND is_active = TRUE
+                """, (user_id,))
+
+                # Log the deletion before deleting the user
+                AuditLogger.log(cursor, self.current_user, 'DELETE', 'users', str(user_id),
+                            notes=f"Deleted user: {username} ({role})")
+
+                # Delete the user
+                cursor.execute("DELETE FROM users WHERE id = %s", (user_id,))
+
+                # Check if deletion was successful
+                if cursor.rowcount == 0:
+                    messagebox.showerror("Error", "User not found or already deleted")
+                    return
+
+            messagebox.showinfo("Success", f"User '{username}' has been deleted successfully")
+            self.load_users()
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to delete user: {e}")
 
     def view_sessions(self):
         """View active user sessions"""
