@@ -7856,11 +7856,30 @@ class AITCMMSSystem:
         # Create style
         style = ttk.Style()
         style.theme_use('clam')
-    
+
+        # Toolbar frame at the top (for Manager actions)
+        if self.current_user_role == 'Manager':
+            toolbar_frame = ttk.Frame(self.root, relief='raised', borderwidth=1)
+            toolbar_frame.pack(side='top', fill='x', padx=5, pady=5)
+
+            # Left side - Title
+            ttk.Label(toolbar_frame, text="Manager Tools:",
+                     font=('Arial', 10, 'bold')).pack(side='left', padx=10)
+
+            # Right side - Action buttons
+            ttk.Button(toolbar_frame, text="👥 Manage Users",
+                      command=self.open_user_management).pack(side='left', padx=5)
+
+            ttk.Button(toolbar_frame, text="Switch to Technician View",
+                      command=self.switch_to_technician_view).pack(side='left', padx=5)
+
+            # Separator
+            ttk.Separator(self.root, orient='horizontal').pack(fill='x', padx=5)
+
         # Main notebook for tabs
         self.notebook = ttk.Notebook(self.root)
         self.notebook.pack(fill='both', expand=True, padx=10, pady=10)
-    
+
         # Create tabs based on role
         if self.current_user_role == 'Manager':
             # Manager gets all tabs
@@ -7868,23 +7887,14 @@ class AITCMMSSystem:
         else:
             # Technicians only get CM tab
             self.create_technician_tabs()
-    
+
         # Status bar with user info
         status_frame = ttk.Frame(self.root)
         status_frame.pack(side='bottom', fill='x')
-    
+
         self.status_bar = ttk.Label(status_frame, text=f"AIT CMMS Ready - Logged in as: {self.user_name} ({self.current_user_role})",
                                     relief='sunken')
         self.status_bar.pack(side='left', fill='x', expand=True)
-
-        # Manager-only buttons
-        if self.current_user_role == 'Manager':
-            # User Management button
-            ttk.Button(status_frame, text="Manage Users",
-                    command=self.open_user_management).pack(side='right', padx=5)
-            # Role switching button (only for development/testing)
-            ttk.Button(status_frame, text="Switch to Technician View",
-                    command=self.switch_to_technician_view).pack(side='right', padx=5)
 
     def create_all_manager_tabs(self):
         """Create all tabs for manager access"""
