@@ -666,9 +666,8 @@ class KPIManager:
                     id,
                     kpi_name as name,
                     function_code as category,
-                    calculation_method,
-                    acceptance_criteria,
-                    target_value
+                    data_source as calculation_method,
+                    acceptance_criteria
                 FROM kpi_definitions
                 WHERE is_active = TRUE
                 ORDER BY function_code, kpi_name
@@ -691,14 +690,14 @@ class KPIManager:
                     d.function_code as category,
                     r.measurement_period as period,
                     r.calculated_value as value,
-                    d.target_value as target,
+                    r.target_value as target,
                     CASE
                         WHEN r.meets_criteria = TRUE THEN 'Pass'
                         WHEN r.meets_criteria = FALSE THEN 'Fail'
                         ELSE 'Pending'
                     END as status,
                     r.calculated_text as notes,
-                    r.updated_date
+                    TO_CHAR(r.calculation_date, 'YYYY-MM-DD') as updated_date
                 FROM kpi_results r
                 JOIN kpi_definitions d ON r.kpi_name = d.kpi_name
                 WHERE r.measurement_period = %s
@@ -720,7 +719,7 @@ class KPIManager:
                 SELECT
                     r.measurement_period as period,
                     r.calculated_value as value,
-                    d.target_value as target,
+                    r.target_value as target,
                     CASE
                         WHEN r.meets_criteria = TRUE THEN 'Pass'
                         WHEN r.meets_criteria = FALSE THEN 'Fail'
@@ -744,7 +743,7 @@ class KPIManager:
         try:
             cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
             cursor.execute("""
-                SELECT kpi_name, calculation_method
+                SELECT kpi_name, data_source
                 FROM kpi_definitions
                 WHERE id = %s AND is_active = TRUE
             """, (kpi_id,))
@@ -754,12 +753,12 @@ class KPIManager:
             if not kpi:
                 return {'error': 'KPI not found'}
 
-            if kpi['calculation_method'] == 'automatic':
-                return self.calculate_kpi(kpi['kpi_name'], period)
-            elif kpi['calculation_method'] == 'manual':
+            # Determine if manual or automatic based on data_source
+            data_source = kpi.get('data_source', '')
+            if 'Supplier' in data_source or 'supplier' in data_source:
                 return self.calculate_manual_kpi(kpi['kpi_name'], period)
             else:
-                return {'error': 'Unknown calculation method'}
+                return self.calculate_kpi(kpi['kpi_name'], period)
         finally:
             self.pool.return_connection(conn)
 
@@ -769,7 +768,9 @@ class KPIManager:
         results = []
 
         for kpi in kpis:
-            if kpi.get('calculation_method') == 'automatic':
+            # Skip manual KPIs (ones that require supplier input)
+            calc_method = kpi.get('calculation_method', '')
+            if 'Supplier' not in calc_method and 'supplier' not in calc_method:
                 try:
                     result = self.calculate_kpi(kpi['name'], period)
                     results.append({
