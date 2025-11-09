@@ -655,3 +655,163 @@ class KPIManager:
             error_msg = f"{str(e)}\n{traceback.format_exc()}"
             print(f"✗ Error calculating {kpi_name}: {error_msg}")
             return {'error': error_msg}
+
+    def get_all_kpis(self):
+        """Get all KPI definitions with standardized format"""
+        conn = self.pool.get_connection()
+        try:
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
+            cursor.execute("""
+                SELECT
+                    id,
+                    kpi_name as name,
+                    function_code as category,
+                    data_source as calculation_method,
+                    acceptance_criteria
+                FROM kpi_definitions
+                WHERE is_active = TRUE
+                ORDER BY function_code, kpi_name
+            """)
+            results = cursor.fetchall()
+            cursor.close()
+            return [dict(row) for row in results]
+        finally:
+            self.pool.return_connection(conn)
+
+    def get_period_results(self, period):
+        """Get all KPI results for a specific period with detailed information"""
+        conn = self.pool.get_connection()
+        try:
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
+            cursor.execute("""
+                SELECT
+                    r.id,
+                    d.kpi_name,
+                    d.function_code as category,
+                    r.measurement_period as period,
+                    r.calculated_value as value,
+                    r.target_value as target,
+                    CASE
+                        WHEN r.meets_criteria = TRUE THEN 'Pass'
+                        WHEN r.meets_criteria = FALSE THEN 'Fail'
+                        ELSE 'Pending'
+                    END as status,
+                    r.calculated_text as notes,
+                    TO_CHAR(r.calculation_date, 'YYYY-MM-DD') as updated_date
+                FROM kpi_results r
+                JOIN kpi_definitions d ON r.kpi_name = d.kpi_name
+                WHERE r.measurement_period = %s
+                AND d.is_active = TRUE
+                ORDER BY d.function_code, d.kpi_name
+            """, (period,))
+            results = cursor.fetchall()
+            cursor.close()
+            return [dict(row) for row in results]
+        finally:
+            self.pool.return_connection(conn)
+
+    def get_kpi_trend(self, kpi_id, months=12):
+        """Get KPI trend data for the last N months"""
+        conn = self.pool.get_connection()
+        try:
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
+            cursor.execute("""
+                SELECT
+                    r.measurement_period as period,
+                    r.calculated_value as value,
+                    r.target_value as target,
+                    CASE
+                        WHEN r.meets_criteria = TRUE THEN 'Pass'
+                        WHEN r.meets_criteria = FALSE THEN 'Fail'
+                        ELSE 'Pending'
+                    END as status
+                FROM kpi_results r
+                JOIN kpi_definitions d ON r.kpi_name = d.kpi_name
+                WHERE d.id = %s
+                AND r.measurement_period >= TO_CHAR(CURRENT_DATE - INTERVAL '%s months', 'YYYY-MM')
+                ORDER BY r.measurement_period ASC
+            """, (kpi_id, months))
+            results = cursor.fetchall()
+            cursor.close()
+            return [dict(row) for row in results]
+        finally:
+            self.pool.return_connection(conn)
+
+    def calculate_single_kpi(self, kpi_id, period):
+        """Calculate a single KPI for a specific period"""
+        conn = self.pool.get_connection()
+        try:
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
+            cursor.execute("""
+                SELECT kpi_name, data_source
+                FROM kpi_definitions
+                WHERE id = %s AND is_active = TRUE
+            """, (kpi_id,))
+            kpi = cursor.fetchone()
+            cursor.close()
+
+            if not kpi:
+                return {'error': 'KPI not found'}
+
+            # Determine if manual or automatic based on data_source
+            data_source = kpi.get('data_source', '')
+            if 'Supplier' in data_source or 'supplier' in data_source:
+                return self.calculate_manual_kpi(kpi['kpi_name'], period)
+            else:
+                return self.calculate_kpi(kpi['kpi_name'], period)
+        finally:
+            self.pool.return_connection(conn)
+
+    def calculate_all_kpis(self, period):
+        """Calculate all automatic KPIs for a period"""
+        kpis = self.get_all_kpis()
+        results = []
+
+        for kpi in kpis:
+            # Skip manual KPIs (ones that require supplier input)
+            calc_method = kpi.get('calculation_method', '')
+            if 'Supplier' not in calc_method and 'supplier' not in calc_method:
+                try:
+                    result = self.calculate_kpi(kpi['name'], period)
+                    results.append({
+                        'kpi_name': kpi['name'],
+                        'result': result
+                    })
+                except Exception as e:
+                    print(f"Error calculating {kpi['name']}: {e}")
+
+        return results
+
+    def record_manual_data(self, kpi_id, period, value, notes, username):
+        """Record manual KPI data"""
+        conn = self.pool.get_connection()
+        try:
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
+
+            # Get KPI name
+            cursor.execute("SELECT kpi_name FROM kpi_definitions WHERE id = %s", (kpi_id,))
+            kpi = cursor.fetchone()
+
+            if not kpi:
+                raise Exception("KPI not found")
+
+            kpi_name = kpi['kpi_name']
+
+            # Record manual data
+            # This is a simplified version - you may need to adjust based on your schema
+            cursor.execute("""
+                INSERT INTO kpi_manual_data (kpi_name, measurement_period, data_field, data_value, data_text, entered_by)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (kpi_name, measurement_period, data_field)
+                DO UPDATE SET
+                    data_value = EXCLUDED.data_value,
+                    data_text = EXCLUDED.data_text,
+                    entered_by = EXCLUDED.entered_by,
+                    updated_date = CURRENT_TIMESTAMP
+            """, (kpi_name, period, 'manual_value', value, notes, username))
+
+            conn.commit()
+            cursor.close()
+
+        finally:
+            self.pool.return_connection(conn)

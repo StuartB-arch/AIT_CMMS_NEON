@@ -10,6 +10,8 @@ from database_utils import db_pool, UserManager, AuditLogger, OptimisticConcurre
 from kpi_database_migration import migrate_kpi_database
 from kpi_manager import KPIManager
 from user_management_ui import UserManagementDialog
+from enterprise_analytics import EnterpriseAnalytics, create_enterprise_dashboard_window
+from executive_report_generator import generate_executive_report
 import shutil
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
@@ -6045,6 +6047,7 @@ class AITCMMSSystem:
             # Import PyQt5 modules needed for the KPI UI
             from PyQt5.QtWidgets import QApplication, QWidget
             from kpi_ui import KPIDashboard
+            from kpi_enhanced_ui import EnhancedKPIDashboard
             import sys
 
             # Check if QApplication instance exists
@@ -6059,14 +6062,33 @@ class AITCMMSSystem:
             # Add instructions label
             instructions = ttk.Label(
                 kpi_frame,
-                text="KPI Dashboard requires PyQt5. Click the button below to open the KPI Dashboard in a new window.",
+                text="KPI Dashboard requires PyQt5. Choose your dashboard below:",
                 wraplength=800,
                 justify='center',
-                font=('Arial', 12)
+                font=('Arial', 12, 'bold')
             )
-            instructions.pack(pady=50)
+            instructions.pack(pady=30)
 
-            # Add button to launch KPI dashboard
+            # Buttons container
+            buttons_frame = ttk.Frame(kpi_frame)
+            buttons_frame.pack(pady=10)
+
+            # Add button to launch ENHANCED KPI dashboard
+            def launch_enhanced_kpi_dashboard():
+                try:
+                    # Create enhanced KPI dashboard window
+                    kpi_window = EnhancedKPIDashboard(db_pool, self.user_name)
+                    kpi_window.setWindowTitle("AIT CMMS - Enhanced KPI Dashboard (Manager)")
+                    kpi_window.resize(1600, 1000)
+                    kpi_window.show()
+
+                    # Process events
+                    app.exec_()
+                except Exception as e:
+                    import traceback
+                    messagebox.showerror("Error", f"Failed to open Enhanced KPI Dashboard:\n{str(e)}\n\n{traceback.format_exc()}")
+
+            # Add button to launch standard KPI dashboard
             def launch_kpi_dashboard():
                 try:
                     # Create KPI dashboard window
@@ -6081,12 +6103,21 @@ class AITCMMSSystem:
                     import traceback
                     messagebox.showerror("Error", f"Failed to open KPI Dashboard:\n{str(e)}\n\n{traceback.format_exc()}")
 
-            launch_btn = ttk.Button(
-                kpi_frame,
-                text="📊 Open KPI Dashboard",
+            # Enhanced dashboard button (primary)
+            enhanced_btn = ttk.Button(
+                buttons_frame,
+                text="🚀 Open ENHANCED KPI Dashboard (with Charts)",
+                command=launch_enhanced_kpi_dashboard
+            )
+            enhanced_btn.pack(side='left', padx=10, pady=10)
+
+            # Standard dashboard button
+            standard_btn = ttk.Button(
+                buttons_frame,
+                text="📊 Open Standard KPI Dashboard",
                 command=launch_kpi_dashboard
             )
-            launch_btn.pack(pady=10)
+            standard_btn.pack(side='left', padx=10, pady=10)
 
             # Add feature description
             features_text = """
@@ -10084,13 +10115,19 @@ class AITCMMSSystem:
         controls_frame = ttk.LabelFrame(self.analytics_frame, text="Analytics Controls", padding=10)
         controls_frame.pack(fill='x', padx=10, pady=5)
         
-        ttk.Button(controls_frame, text="Refresh Dashboard", 
+        ttk.Button(controls_frame, text="🚀 Enterprise Dashboard",
+                  command=self.launch_enterprise_dashboard,
+                  style='Accent.TButton').pack(side='left', padx=5)
+        ttk.Button(controls_frame, text="📊 Executive Report",
+                  command=self.generate_executive_report,
+                  style='Accent.TButton').pack(side='left', padx=5)
+        ttk.Button(controls_frame, text="Refresh Dashboard",
                   command=self.refresh_analytics_dashboard).pack(side='left', padx=5)
-        ttk.Button(controls_frame, text="Equipment Analytics", 
+        ttk.Button(controls_frame, text="Equipment Analytics",
                   command=self.show_equipment_analytics).pack(side='left', padx=5)
-        ttk.Button(controls_frame, text="PM Trends", 
+        ttk.Button(controls_frame, text="PM Trends",
                   command=self.show_pm_trends).pack(side='left', padx=5)
-        ttk.Button(controls_frame, text="Export Analytics", 
+        ttk.Button(controls_frame, text="Export Analytics",
                   command=self.export_analytics).pack(side='left', padx=5)
         
         # Dashboard display
@@ -14253,13 +14290,52 @@ class AITCMMSSystem:
         except Exception as e:
             messagebox.showerror("Error", f"Failed to refresh trends analysis: {str(e)}")
     
-    
-    
-    
-    
-    
-    
-    
+    def launch_enterprise_dashboard(self):
+        """Launch the enterprise-level analytics dashboard"""
+        try:
+            create_enterprise_dashboard_window(self.conn)
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to launch enterprise dashboard: {str(e)}")
+            print(f"Enterprise dashboard error: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def generate_executive_report(self):
+        """Generate executive summary report with charts"""
+        try:
+            self.update_status("Generating executive report...")
+
+            # Ask user for output location
+            from tkinter import filedialog
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = filedialog.asksaveasfilename(
+                defaultextension=".pdf",
+                filetypes=[("PDF files", "*.pdf")],
+                initialfile=f"AIT_CMMS_Executive_Summary_{timestamp}.pdf",
+                title="Save Executive Report"
+            )
+
+            if filename:
+                output_file = generate_executive_report(self.conn, filename)
+                messagebox.showinfo(
+                    "Success",
+                    f"Executive report generated successfully!\n\nSaved to:\n{output_file}\n\nThis presentation-ready report includes:\n• Executive summary\n• Key performance indicators\n• Visual charts and graphs\n• Performance analysis\n• Recommendations"
+                )
+                self.update_status("Executive report generated successfully")
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to generate executive report: {str(e)}")
+            print(f"Executive report error: {e}")
+            import traceback
+            traceback.print_exc()
+            self.update_status("Failed to generate executive report")
+
+
+
+
+
+
+
     def export_analytics(self):
         """Export analytics to file"""
         try:
