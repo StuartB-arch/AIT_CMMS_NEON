@@ -3089,43 +3089,43 @@ class AITCMMSSystem:
         # Set main window background
         self.root.configure(bg="#e8f4f8")  # Light blue-gray
     
-        # Configure Treeview (your asset lists)
+        # Configure Treeview (your asset lists) with larger fonts
         self.style.configure("Treeview",
                         background="#ffffff",        # White background
                         foreground="#1e3a8a",       # Dark blue text
-                        rowheight=25,
+                        rowheight=40,                # Increased from 25 for better readability
                         fieldbackground="#ffffff")   # White field background
-    
-        # Treeview headers
+
+        # Treeview headers - increased font size
         self.style.configure("Treeview.Heading",
                         background="#3b82f6",       # Blue headers
                         foreground="white",
-                        font=('TkDefaultFont', 9, 'bold'))
-    
-        # Buttons
+                        font=('TkDefaultFont', 14, 'bold'))  # Increased from 9
+
+        # Buttons - increased font size
         self.style.configure("TButton",
                         background="#3b82f6",       # Blue buttons
                         foreground="white",
-                        padding=(10, 5),
+                        padding=(15, 8),             # Increased padding for larger buttons
                         relief="flat",
-                        font=('TkDefaultFont', 9))
-    
+                        font=('TkDefaultFont', 13))  # Increased from 9
+
         # Button hover effects
         self.style.map("TButton",
                     background=[('active', '#60a5fa'),    # Lighter blue on hover
                                 ('pressed', '#1d4ed8')])   # Darker blue when pressed
-    
-        # LabelFrames (your control sections)
+
+        # LabelFrames (your control sections) - increased font size
         self.style.configure("TLabelframe",
                         background="#e8f4f8",       # Light blue-gray
                         foreground="#1e3a8a",       # Dark blue text
                         borderwidth=2,
                         relief="groove")
-    
+
         self.style.configure("TLabelframe.Label",
                         background="#e8f4f8",
                         foreground="#1e3a8a",
-                        font=('TkDefaultFont', 10, 'bold'))
+                        font=('TkDefaultFont', 14, 'bold'))  # Increased from 10
     
         # Frames
         self.style.configure("TFrame",
@@ -5143,6 +5143,15 @@ class AITCMMSSystem:
         self.session_id = None  # Track user session for multi-user support
         self.user_id = None  # Database user ID
         self.root.title("AIT Complete CMMS - Computerized Maintenance Management System")
+
+        # ===== UI SCALING FOR BETTER READABILITY =====
+        # Increase UI scaling to make text and widgets larger
+        # This helps on high-DPI displays and makes the app more readable
+        try:
+            # Scale up all UI elements by 50% for better readability
+            self.root.tk.call('tk', 'scaling', 2.0)
+        except:
+            pass
 
         # Get screen dimensions and make window fullscreen
         screen_width = self.root.winfo_screenwidth()
