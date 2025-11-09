@@ -753,34 +753,23 @@ class KPIManager:
             if not kpi:
                 return {'error': 'KPI not found'}
 
-            # Determine if manual or automatic based on data_source
-            data_source = kpi.get('data_source', '')
-            if 'Supplier' in data_source or 'supplier' in data_source:
-                return self.calculate_manual_kpi(kpi['kpi_name'], period)
+            kpi_name = kpi['kpi_name']
+
+            # Check if this is a manual KPI
+            manual_kpis = self.get_kpis_needing_manual_data()
+            if kpi_name in manual_kpis:
+                return self.calculate_manual_kpi(kpi_name, period)
             else:
-                return self.calculate_kpi(kpi['kpi_name'], period)
+                # For auto KPIs, call the specific calculation method
+                # Since we have specific methods for each, just trigger recalculation
+                return self.calculate_all_auto_kpis(period)
         finally:
             self.pool.return_connection(conn)
 
     def calculate_all_kpis(self, period):
         """Calculate all automatic KPIs for a period"""
-        kpis = self.get_all_kpis()
-        results = []
-
-        for kpi in kpis:
-            # Skip manual KPIs (ones that require supplier input)
-            calc_method = kpi.get('calculation_method', '')
-            if 'Supplier' not in calc_method and 'supplier' not in calc_method:
-                try:
-                    result = self.calculate_kpi(kpi['name'], period)
-                    results.append({
-                        'kpi_name': kpi['name'],
-                        'result': result
-                    })
-                except Exception as e:
-                    print(f"Error calculating {kpi['name']}: {e}")
-
-        return results
+        # Use the existing method that knows how to calculate all auto KPIs
+        return self.calculate_all_auto_kpis(period)
 
     def record_manual_data(self, kpi_id, period, value, notes, username):
         """Record manual KPI data"""

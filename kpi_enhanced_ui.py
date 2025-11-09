@@ -521,7 +521,10 @@ class EnhancedKPIDashboard(QWidget):
             # Update manual KPI selector
             if hasattr(self, 'manual_kpi_combo'):
                 self.manual_kpi_combo.clear()
-                manual_kpis = [k for k in kpi_defs if k.get('calculation_method') == 'manual']
+                # Get list of manual KPIs from KPI manager
+                manual_kpi_names = self.kpi_manager.get_kpis_needing_manual_data()
+                # Filter kpi_defs to only include manual KPIs
+                manual_kpis = [k for k in kpi_defs if k['name'] in manual_kpi_names]
                 for kpi in manual_kpis:
                     self.manual_kpi_combo.addItem(kpi['name'], kpi['id'])
 
