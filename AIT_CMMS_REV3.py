@@ -5143,11 +5143,24 @@ class AITCMMSSystem:
         self.session_id = None  # Track user session for multi-user support
         self.user_id = None  # Database user ID
         self.root.title("AIT Complete CMMS - Computerized Maintenance Management System")
-        self.root.geometry("1800x1000")
+
+        # Get screen dimensions and make window fullscreen
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+
+        # Set window to fullscreen for better readability
+        self.root.geometry(f"{screen_width}x{screen_height}+0+0")
+
+        # Try different maximize methods based on platform
         try:
-            self.root.state('zoomed')  # Maximize window on Windows
+            self.root.state('zoomed')  # Works on Windows
         except:
-            pass  # Skip if not on Windows
+            try:
+                # For Linux/Unix systems
+                self.root.attributes('-zoomed', True)
+            except:
+                # If all else fails, just make it fill the screen
+                self.root.geometry(f"{screen_width}x{screen_height}+0+0")
 
         # ===== ROLE-BASED ACCESS CONTROL =====
         self.current_user_role = None  # Will be set by login
